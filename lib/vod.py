@@ -445,82 +445,243 @@ class VOD1:
 
 class VOD2:
     def __init__(self, url):
+        # base normalizada e headers base ao estilo "api_vod.VOD"
         self.base = url
+        self.parent_candidates = [
+            "https://iframetester.com/",
+            "https://iframetester.com",
+            "https://iframetester.com/embed",
+        ]
+        self.base_headers = {
+            'User-Agent': USER_AGENT,
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Site': 'cross-site',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Dest': 'iframe',
+        }
 
-    def tvshows(self,imdb,season,episode):
+    def _fetch_player_video_source(self, session, video_url, r_):
+        try:
+            video_hash = video_url.split('/')[-1]
+            parsed_url = urlparse(video_url)
+            origin = f'{parsed_url.scheme}://{parsed_url.netloc}'
+            player = f'{parsed_url.scheme}://{parsed_url.netloc}/player/index.php?data={video_hash}&do=getVideo'
+
+            # GET video_url para obter cookies do player
+            try:
+                r = session.get(
+                    video_url,
+                    headers={**self.base_headers, 'Referer': self.base.rstrip('/') + '/'},
+                    allow_redirects=True,
+                    timeout=20
+                )
+            except Exception as e:
+                print(f"[VOD2] Falha GET video_url: {e}")
+                return ''
+
+            cookies_dict = r.cookies.get_dict()
+            cookie_string = urlencode(cookies_dict) if cookies_dict else ''
+
+            headers_post = {
+                'Origin': origin,
+                'x-requested-with': 'XMLHttpRequest',
+                'Referer': r_.rstrip('/'),
+                'User-Agent': USER_AGENT,
+            }
+
+            try:
+                r = session.post(
+                    player,
+                    headers=headers_post,
+                    data={'hash': str(video_hash), 'r': r_},
+                    cookies=cookies_dict,
+                    timeout=20
+                )
+            except Exception as e:
+                print(f"[VOD2] Falha POST player: {e}")
+                return ''
+
+            src = r.json() if r.status_code == 200 else {}
+            videoSource = src.get('videoSource') if isinstance(src, dict) else None
+            if not videoSource:
+                print(f"[VOD2] videoSource ausente. Status={r.status_code} Body={str(r.text)[:200]}")
+                return ''
+
+            # Retorna com UA e Cookie no pipe
+            extra = '|User-Agent=' + quote_plus(USER_AGENT)
+            if cookie_string:
+                extra += '&Cookie=' + quote_plus(cookie_string)
+            return videoSource + extra
+        except Exception as e:
+            print(f"[VOD2] Erro _fetch_player_video_source: {e}")
+            return ''
+
+    def tvshows(self, imdb, season, episode):
         stream = ''
         try:
-            if imdb and season and episode:
-                url = '{0}/serie/{1}/{2}/{3}'.format(self.base,imdb,season,episode)
-                parsed_url_r = urlparse(url)
-                r_ = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_url_r)
-                dnsresolver_.change(url)
-                r = requests.get(url,headers={'User-Agent': USER_AGENT})
-                src = r.text
-                soup = BeautifulSoup(src, 'html.parser')
+            if not (imdb and season and episode):
+                return ''
+
+            session = cfscraper
+
+            # Warm-up homepage para cookies iniciais/CF
+            try:
+                session.get(self.base, headers=self.base_headers, timeout=20)
+            except Exception as e:
+                print(f"[VOD2] aviso: GET homepage falhou: {e}")
+
+            url = f'{self.base}/serie/{imdb}/{season}/{episode}'
+            parsed_url_r = urlparse(url)
+            r_ = f'{parsed_url_r.scheme}://{parsed_url_r.netloc}/'
+
+            # Tenta múltiplos parent referers
+            last_src = ''
+            div = None
+            for parent in self.parent_candidates:
                 try:
-                    div = soup.find('episode-item', class_='episodeOption active')
-                except:
-                    div = {}
-                if not div:
+                    headers = {**self.base_headers, 'Referer': parent, 'User-Agent': USER_AGENT}
+                    # manter DNS override se usar dnsresolver_, mas aqui seguimos a sessão CF
+                    r = session.get(url, headers=headers, allow_redirects=True, timeout=20)
+                    src = r.text
+                    last_src = src
+                    soup = BeautifulSoup(src, 'html.parser')
                     try:
-                        div = soup.find('div', class_='episodeOption active')
+                        div = soup.find('episode-item', class_='episodeOption active')
                     except:
-                        div = {}
-                data_contentid = div['data-contentid']
-                api = '{0}/api'.format(self.base)
-                dnsresolver_.change(url)
-                r = requests.post(api,headers={'User-Agent': USER_AGENT},data={'action': 'getOptions', 'contentid': data_contentid})
-                src = r.json()
-                id_ = src['data']['options'][0]['ID']
-                dnsresolver_.change(url)
-                r = requests.post(api,headers={'User-Agent': USER_AGENT},data={'action': 'getPlayer', 'video_id': id_})
-                src = r.json()
-                video_url = src['data']['video_url']
-                video_hash = video_url.split('/')[-1]
-                parsed_url = urlparse(video_url)
-                origin = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_url)
-                player = '{uri.scheme}://{uri.netloc}/player/index.php?data={0}&do=getVideo'.format(video_hash, uri=parsed_url)
-                dnsresolver_.change(url)
-                r = requests.get(video_url, headers={'User-Agent': USER_AGENT, 'Referer': self.base + '/'})
-                cookies_dict = r.cookies.get_dict()
-                r = requests.post(player,headers={'User-Agent': USER_AGENT, 'Origin': origin, 'x-requested-with': 'XMLHttpRequest'}, data={'hash': str(video_hash), 'r': r_}, cookies=cookies_dict)
-                src = r.json()
-                stream = src['videoSource'] + '|User-Agent=' + quote_plus(USER_AGENT)
-        except:
-            pass       
+                        div = None
+                    if not div:
+                        try:
+                            div = soup.find('div', class_='episodeOption active')
+                        except:
+                            div = None
+                    if div:
+                        break
+                except Exception as e:
+                    print(f"[VOD2] GET com Referer={parent} falhou: {e}")
+                    continue
+
+            if not div:
+                print("[VOD2] Bloco do episódio não encontrado.")
+                return ''
+
+            data_contentid = div.get('data-contentid')
+            if not data_contentid:
+                print("[VOD2] data-contentid ausente.")
+                return ''
+
+            api = f'{self.base}/api'
+            try:
+                r = session.post(
+                    api,
+                    headers={**self.base_headers, 'Referer': self.base.rstrip('/') + '/'},
+                    data={'action': 'getOptions', 'contentid': data_contentid},
+                    timeout=20
+                )
+                src = r.json() if r.status_code == 200 else {}
+                id_ = src.get('data', {}).get('options', [{}])[0].get('ID')
+            except Exception as e:
+                print(f"[VOD2] getOptions erro: {e}")
+                id_ = None
+
+            if not id_:
+                print("[VOD2] ID do player não encontrado em getOptions.")
+                return ''
+
+            try:
+                r = session.post(
+                    api,
+                    headers={**self.base_headers, 'Referer': self.base.rstrip('/') + '/'},
+                    data={'action': 'getPlayer', 'video_id': id_},
+                    timeout=20
+                )
+                js = r.json() if r.status_code == 200 else {}
+                video_url = js.get('data', {}).get('video_url')
+            except Exception as e:
+                print(f"[VOD2] getPlayer erro: {e}")
+                video_url = None
+
+            if not video_url:
+                print("[VOD2] video_url não obtido.")
+                return ''
+
+            stream = self._fetch_player_video_source(session, video_url, r_)
+        except Exception as e:
+            print(f"[VOD2] Erro geral tvshows: {e}")
         return stream
-    
-    def movie(self,imdb):
+
+    def movie(self, imdb):
         stream = ''
         try:
-            if imdb:
-                url = '{0}/filme/{1}'.format(self.base,imdb)
-                parsed_url_r = urlparse(url)
-                r_ = '{uri.scheme}://{uri.netloc}/'.format(uri=parsed_url_r)
-                dnsresolver_.change(url)
-                r = requests.get(url,headers={'User-Agent': USER_AGENT})
-                src = r.text
-                soup = BeautifulSoup(src, 'html.parser')
-                div = soup.find('div',{'class': 'players_select'}) # dublado
-                data_id = div.find('div', {'class': 'player_select_item'}).get('data-id', '')
-                api = '{0}/api'.format(self.base)
-                dnsresolver_.change(url)
-                r = requests.post(api,headers={'User-Agent': USER_AGENT},data={'action': 'getPlayer', 'video_id': data_id})
-                src = r.json()
-                video_url = src['data']['video_url']
-                video_hash = video_url.split('/')[-1]
-                parsed_url = urlparse(video_url)
-                origin = '{uri.scheme}://{uri.netloc}'.format(uri=parsed_url)
-                player = '{uri.scheme}://{uri.netloc}/player/index.php?data={0}&do=getVideo'.format(video_hash, uri=parsed_url)
-                dnsresolver_.change(url)
-                r = requests.get(video_url, headers={'User-Agent': USER_AGENT,'Referer': self.base + '/'})
-                cookies_dict = r.cookies.get_dict()
-                r = cfscraper.post(player,headers={'Origin': origin, 'x-requested-with': 'XMLHttpRequest'}, data={'hash': str(video_hash), 'r': r_}, cookies=cookies_dict)
-                src = r.json()
-                stream = src['videoSource'] + '|User-Agent=' + quote_plus(USER_AGENT)
-        except:
-            pass
+            if not imdb:
+                return ''
+
+            session = cfscraper
+
+            # Warm-up homepage
+            try:
+                session.get(self.base, headers=self.base_headers, timeout=20)
+            except Exception as e:
+                print(f"[VOD2] aviso: GET homepage falhou: {e}")
+
+            url = f'{self.base}/filme/{imdb}'
+            parsed_url_r = urlparse(url)
+            r_ = f'{parsed_url_r.scheme}://{parsed_url_r.netloc}/'
+
+            last_src = ''
+            div_players = None
+            for parent in self.parent_candidates:
+                try:
+                    headers = {**self.base_headers, 'Referer': parent, 'User-Agent': USER_AGENT}
+                    r = session.get(url, headers=headers, allow_redirects=True, timeout=20)
+                    src = r.text
+                    last_src = src
+                    soup = BeautifulSoup(src, 'html.parser')
+                    div_players = soup.find('div', {'class': 'players_select'})
+                    if div_players:
+                        break
+                except Exception as e:
+                    print(f"[VOD2] GET filme com Referer={parent} falhou: {e}")
+                    continue
+
+            if not div_players:
+                print("[VOD2] players_select não encontrado.")
+                return ''
+
+            try:
+                player_item = div_players.find('div', {'class': 'player_select_item'})
+                data_id = player_item.get('data-id', '') if player_item else ''
+            except Exception as e:
+                print(f"[VOD2] Erro extraindo data-id: {e}")
+                data_id = ''
+
+            if not data_id:
+                print("[VOD2] data-id ausente.")
+                return ''
+
+            api = f'{self.base}/api'
+            try:
+                r = session.post(
+                    api,
+                    headers={**self.base_headers, 'Referer': self.base.rstrip('/') + '/'},
+                    data={'action': 'getPlayer', 'video_id': data_id},
+                    timeout=20
+                )
+                js = r.json() if r.status_code == 200 else {}
+                video_url = js.get('data', {}).get('video_url')
+            except Exception as e:
+                print(f"[VOD2] getPlayer erro: {e}")
+                video_url = None
+
+            if not video_url:
+                print("[VOD2] video_url não obtido.")
+                return ''
+
+            stream = self._fetch_player_video_source(session, video_url, r_)
+        except Exception as e:
+            print(f"[VOD2] Erro geral movie: {e}")
         return stream
 
 class VOD3:
