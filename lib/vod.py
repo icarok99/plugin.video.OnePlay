@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote_plus
 try:
     from lib.client import cfscraper
 except ImportError:
@@ -13,12 +13,14 @@ try:
     from lib import jsunpack
 except ImportError:
     import jsunpack
-
 try:
     from lib import tear
 except ImportError:
     import tear
 import socket
+import requests
+from bs4 import BeautifulSoup
+import json
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
@@ -697,6 +699,17 @@ class VOD3:
     def soup(self, html):
         return BeautifulSoup(html, 'html.parser')
 
+    def _clean_aviso_url(self, url):
+        """
+        Remove camada 'aviso' do doramasonline e retorna a URL real do player.
+        """
+        parsed = urlparse(url)
+        if "doramasonline.org/aviso" in url and "url=" in parsed.query:
+            qs = parse_qs(parsed.query)
+            if "url" in qs:
+                return unquote(qs["url"][0])
+        return url
+
     def scraper_dublados(self, page=1):
         url = f'{self.base}br/generos/dublado/page/{page}/'
         return self._scrape_catalogo(url)
@@ -845,30 +858,31 @@ class VOD3:
     def scraper_players(self, url):
         opcoes = []
         try:
-            r = requests.get(url, headers=self.headers, timeout=10)
+            print(f"[scraper_players] Iniciando scrape em: {url}")
+            r = requests.get(url, headers=self.headers)
             soup = self.soup(r.text)
 
-            names = [li.find('span', {'class': 'title'}).text.strip().upper()
+            names = [li.find('span', {'class': 'title'}).text
                      for li in soup.find_all('li', class_='dooplay_player_option')]
+            print(f"[scraper_players] Nomes encontrados: {names}")
 
             iframes = soup.find_all("iframe", class_=lambda x: x and x.startswith("metaframe"))
+            print(f"[scraper_players] Iframes encontrados: {len(iframes)}")
+
             if iframes:
                 mode = 1 if len(names) == len(iframes) else 2
+                print(f"[scraper_players] Modo de associação: {mode}")
                 for n, iframe in enumerate(iframes):
-                    name = names[n] if mode == 1 else f"OPÇÃO {n + 1}"
+                    name = names[n] if mode == 1 else f"Opção {n + 1}"
                     link = iframe.get("src", "")
-
+                    link = self._clean_aviso_url(link)  # limpa aviso
+                    print(f"[scraper_players] Player {n+1}: Nome='{name}' | Link='{link}'")
                     if link:
-                        # Normaliza caso seja /aviso/?url=
-                        link = normalizar_url_aviso(link)
-
-                        # Se for player dublado, já marca para resolver com ResolveURL
-                        if "DUBLADO" in name:
-                            link = f"resolveurl:{link}"
-
                         opcoes.append((name, link))
         except Exception as e:
-            print("[VOD3] Erro ao extrair players:", e)
+            print("Erro ao extrair players:", e)
+
+        print(f"[scraper_players] Total de opções extraídas: {len(opcoes)}")
         return opcoes
 
     def _scrape_catalogo(self, url):
