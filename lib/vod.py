@@ -76,377 +76,11 @@ class DNSResolver:
             
         self._change_dns(host, port, ip_address)
 
-dnsresolver_ = DNSResolver()    
+dnsresolver_ = DNSResolver()                                      
+    
 
 
 class VOD1:
-    def __init__(self,url):
-        self.headers = {'User-Agent': USER_AGENT}
-        self.base = self.get_last_base(url)
-        #self.base = url
-
-    def get_last_base(self, url):
-        host_base = url
-        last_url = ''
-        try:
-            dnsresolver_.change(url)
-            r = requests.get(host_base,headers=self.headers,timeout=4)
-            last_url = r.url
-        except:
-            pass     
-
-        if last_url and last_url.endswith('/'):
-            last_url = last_url[:-1]
-        return last_url        
-
-    def soup(self,src):
-        soup = BeautifulSoup(src,'html.parser')
-        return soup
-    
-    def get_packed_data(self,html):
-        packed_data = ''
-        try:
-            for match in re.finditer(r'''(eval\s*\(function\(p,a,c,k,e,.*?)</script>''', html, re.DOTALL | re.I):
-                r = match.group(1)
-                t = re.findall(r'(eval\s*\(function\(p,a,c,k,e,)', r, re.DOTALL | re.IGNORECASE)
-                if len(t) == 1:
-                    if jsunpack.detect(r):
-                        packed_data += jsunpack.unpack(r)
-                else:
-                    t = r.split('eval')
-                    t = ['eval' + x for x in t if x]
-                    for r in t:
-                        if jsunpack.detect(r):
-                            packed_data += jsunpack.unpack(r)
-        except:
-            pass
-        return packed_data
-
-    def pesquisa_filmes(self,url,pesquisa):
-        itens_pesquisa = []
-        next_page = False
-        page = ''
-        if pesquisa:
-            url = '%s/?s=%s'%(self.base,quote_plus(pesquisa))           
-        try:
-            headers = {'User-Agent': USER_AGENT}
-            headers.update({'Cookie': 'XCRF%3DXCRF'})
-            dnsresolver_.change(url)
-            r = requests.get(url,headers=headers)
-            src = r.text
-            soup = self.soup(src)
-            box = soup.find("div", {"id": "box_movies"})
-            movies = box.findAll("div", {"class": "movie"})
-            for i in movies:
-                name = i.find('h2').text
-                try:
-                    name = name.decode('utf-8')
-                except:
-                    pass
-                try:
-                    year = i.find('span', {'class': 'year'}).text
-                    year = year.replace('–', '')
-                except:
-                    year = ''
-                img = i.find('div', {'class': 'imagen'})
-                iconimage = img.find('img').get('src', '')
-                iconimage = iconimage.replace('-120x170', '')
-                link = img.find('a').get('href', '')
-                if '/tvshows/' in link:
-                    name = '%s (Série)'%name
-                else:
-                    if 'hdcam' in link and not 'hdcam' in name.lower():
-                        name = '%s (Filme) (HDCAM)'%name
-                    else:
-                        name = '%s (Filme)'%name
-                if year:
-                    name = '[B]%s (%s)[/B]'%(name,str(year))
-                else:
-                    name = '[B]%s[/B]'%name                
-                itens_pesquisa.append((name,iconimage,link))
-            try:
-                div = soup.find('div', {'id': 'paginador'}).find('div', {'class': 'paginado'})
-                current = div.find('span', {'class': 'current'}).text
-                a = div.findAll('a')
-                for i in a:
-                    href = i.get('href', '')
-                    nxt = str(int(current) + 1)
-                    if nxt in href:
-                        next_page = href
-                        try:
-                            page_ = next_page.split('page/')[1]
-                            try:
-                                page = page_.split('/')[0]
-                            except:
-                                page = page_
-                        except:
-                            pass
-                        break
-
-            except:
-                pass
-        except:
-            pass
-        return itens_pesquisa, next_page, page 
-
-    def scraper_filmes(self, url=''):
-        if not url:
-            url = self.base + '/category/ultimos-filmes/'
-        filmes = []
-        next_page = False
-        page = ''
-        try:
-            headers = {'User-Agent': USER_AGENT}
-            headers.update({'Cookie': 'XCRF%3DXCRF'})
-            dnsresolver_.change(url)
-            r = requests.get(url,headers=headers)
-            src = r.text
-            soup = self.soup(src)
-            box = soup.find("div", {"id": "box_movies"})
-            movies = box.findAll("div", {"class": "movie"})
-            for i in movies:
-                name = i.find('h2').text
-                img = i.find('div', {'class': 'imagen'})
-                iconimage = img.find('img').get('src', '')
-                iconimage = iconimage.replace('-120x170', '')
-                link = img.find('a').get('href', '')                
-                try:
-                    name = name.decode('utf-8')
-                except:
-                    pass
-                try:
-                    year = i.find('span', {'class': 'year'}).text
-                    year = year.replace('–', '')
-                except:
-                    year = ''
-                if year:
-                    if 'hdcam' in link and not 'hdcam' in name.lower():
-                        name = '[B]%s (%s) (HDCAM)[/B]'%(name,str(year))
-                    else:
-                        name = '[B]%s (%s)[/B]'%(name,str(year))
-                else:
-                    if 'hdcam' in link and not 'hdcam' in name.lower():
-                        name = '[B]%s (HDCAM)[/B]'%name
-                    else:
-                        name = '[B]%s[/B]'%name
-                filmes.append((name,iconimage,link))
-            try:
-                div = soup.find('div', {'id': 'paginador'}).find('div', {'class': 'paginado'})
-                current = div.find('span', {'class': 'current'}).text
-                a = div.findAll('a')
-                for i in a:
-                    href = i.get('href', '')
-                    nxt = str(int(current) + 1)
-                    if nxt in href:
-                        next_page = href
-                        try:
-                            page_ = next_page.split('page/')[1]
-                            try:
-                                page = page_.split('/')[0]
-                            except:
-                                page = page_
-                        except:
-                            pass
-                        break
-
-            except:
-                pass
-        except:
-            pass
-        return filmes, next_page, page
-
-    def opcoes_filmes(self,url):
-        opcoes = []      
-        try:
-            headers = {'User-Agent': USER_AGENT}
-            headers.update({'Cookie': 'XCRF%3DXCRF'})
-            dnsresolver_.change(url)
-            r = requests.get(url,headers=headers)
-            src = r.text
-            soup = self.soup(src)
-            player = soup.find('div', {'id': 'player-container'})
-            botoes = player.find('ul', {'class': 'player-menu'})
-            op = botoes.findAll('li')
-            op_list = []
-            if op:
-                for i in op:
-                    a = i.find('a')
-                    id_ = a.get('href', '').replace('#', '')
-                    op_name = a.text
-                    try:
-                        op_name = op_name.decode('utf-8')
-                    except:
-                        pass
-                    op_name = op_name.replace(' 1', '').replace(' 2', '').replace(' 3', '').replace(' 4', '').replace(' 5', '')
-                    op_name = op_name.strip()
-                    op_name = op_name.upper()
-                    op_list.append((op_name,id_))
-            if op_list:
-                for name, id_ in op_list:
-                    iframe = player.find('div', {'class': 'play-c'}).find('div', {'id': id_}).find('iframe').get('src', '')
-                    if not 'streamtape' in iframe:
-                        link = self.base + '/' + iframe
-                    else:
-                        link = iframe
-                    opcoes.append((name,link))
-
-        except:
-            pass
-        return opcoes
-
-    def scraper_series(self, url=''):
-        if not url:
-            url = self.base + '/tvshows/'          
-        series = []
-        next_page = False
-        page = ''
-        try:
-            headers = {'User-Agent': USER_AGENT}
-            headers.update({'Cookie': 'XCRF%3DXCRF'})
-            dnsresolver_.change(url)
-            r = requests.get(url,headers=headers)
-            src = r.text
-            soup = self.soup(src)
-            box = soup.find("div", {"id": "box_movies"})
-            movies = box.findAll("div", {"class": "movie"})
-            for i in movies:
-                name = i.find('h2').text
-                try:
-                    name = name.decode('utf-8')
-                except:
-                    pass
-                try:
-                    year = i.find('span', {'class': 'year'}).text
-                    year = year.replace('–', '')
-                except:
-                    year = ''
-                if year:
-                    name = '[B]%s (%s)[/B]'%(name,str(year))
-                else:
-                    name = '[B]%s[/B]'%name
-                img = i.find('div', {'class': 'imagen'})
-                iconimage = img.find('img').get('src', '')
-                iconimage = iconimage.replace('-120x170', '')
-                link = img.find('a').get('href', '')
-                series.append((name,iconimage,link))
-            try:
-                div = soup.find('div', {'id': 'paginador'}).find('div', {'class': 'paginado'})
-                current = div.find('span', {'class': 'current'}).text
-                a = div.findAll('a')
-                for i in a:
-                    href = i.get('href', '')
-                    nxt = str(int(current) + 1)
-                    if nxt in href:
-                        next_page = href
-                        try:
-                            page_ = next_page.split('page/')[1]
-                            try:
-                                page = page_.split('/')[0]
-                            except:
-                                page = page_
-                        except:
-                            pass
-                        break
-
-            except:
-                pass
-        except:
-            pass
-        return series, next_page, page
-
-    def scraper_temporadas_series(self,url):
-        url_original = url       
-        list_seasons = []
-        serie_name_final = ''
-        img = ''
-        fanart = ''        
-        try:
-            headers = {'User-Agent': USER_AGENT}
-            headers.update({'Cookie': 'XCRF%3DXCRF'})
-            dnsresolver_.change(url)
-            r = requests.get(url, headers=headers)
-            src = r.text
-            soup = self.soup(src)
-            # info
-            try:
-                div_img = soup.find('div', {'id': 'movie'}).find('div', {'class': 'post'}).find('div', {'class': 'headingder'})
-                fanart = div_img.find('div', class_=lambda x: x and 'lazyload' in x).get('data-bg', '')
-                img = div_img.find('img', {'class': 'lazyload'}).get('data-src', '')
-                try:
-                    serie_name = div_img.find('div', {'class': 'datos'}).find('div', {'class': 'dataplus'}).find('h1').text
-                    try:
-                        serie_name = serie_name.decode('utf-8')
-                    except:
-                        pass
-                    serie_name_final = '[B]:::: SÉRIE: %s ::::[/B]'%serie_name
-                except:
-                    pass
-            except:
-                pass
-            s = soup.find('div', {'id': 'movie'}).find('div', {'class': 'post'}).find('div', {'id': 'cssmenu'}).find('ul').findAll('li', {'class': 'has-sub'})
-            for n, i in enumerate(s):
-                n += 1
-                name = '[B]TEMPORADA %s[/B]'%str(n)
-                season = str(n)
-                list_seasons.append((season,name,url_original))
-        except:
-            pass
-        return serie_name_final, img, fanart, list_seasons 
-
-    def scraper_episodios_series(self,url,season):
-        list_episodes = []
-        serie_name_final = ''
-        img = ''
-        fanart = ''        
-        try:
-            headers = {'User-Agent': USER_AGENT}
-            headers.update({'Cookie': 'XCRF%3DXCRF'})
-            dnsresolver_.change(url)
-            r = requests.get(url, headers=headers)
-            src = r.text
-            soup = self.soup(src)
-            # info
-            try:
-                div_img = soup.find('div', {'id': 'movie'}).find('div', {'class': 'post'}).find('div', {'class': 'headingder'})
-                fanart = div_img.find('div', class_=lambda x: x and 'lazyload' in x).get('data-bg', '')
-                img = div_img.find('img', {'class': 'lazyload'}).get('data-src', '')
-                try:
-                    serie_name = div_img.find('div', {'class': 'datos'}).find('div', {'class': 'dataplus'}).find('h1').text
-                    try:
-                        serie_name = serie_name.decode('utf-8')
-                    except:
-                        pass
-                    serie_name_final = '[B]:::: SÉRIE: %s ::::[/B]'%serie_name
-                except:
-                    pass
-            except:
-                pass
-            s = soup.find('div', {'id': 'movie'}).find('div', {'class': 'post'}).find('div', {'id': 'cssmenu'}).find('ul').findAll('li', {'class': 'has-sub'})
-            for n, i in enumerate(s):
-                n += 1
-                if int(season) == n:
-                    e = i.find('ul').findAll('li')
-                    for n, i in enumerate(e):
-                        n += 1
-                        e_info = i.find('a')
-                        link = e_info.get('href')
-                        ep_name = e_info.find('span', {'class': 'datix'}).text
-                        try:
-                            ep_name = ep_name.decode('utf-8')
-                        except:
-                            pass
-                        ep_name = ep_name.strip()
-                        name_especial = '[B]%s - %s x %s - %s[/B]'%(serie_name,str(season),str(n),ep_name)
-                        ep_name2 = '[B]%s - %s[/B]'%(str(n),ep_name)
-                        list_episodes.append((ep_name2,name_especial,link))
-                    break
-        except:
-            pass
-        return serie_name_final, img, fanart, list_episodes                                  
-    
-
-
-class VOD2:
     def __init__(self, url):
         # base normalizada e headers base ao estilo "api_vod.VOD"
         self.base = url
@@ -482,7 +116,7 @@ class VOD2:
                     timeout=20
                 )
             except Exception as e:
-                print(f"[VOD2] Falha GET video_url: {e}")
+                print(f"[VOD1] Falha GET video_url: {e}")
                 return ''
 
             cookies_dict = r.cookies.get_dict()
@@ -504,13 +138,13 @@ class VOD2:
                     timeout=20
                 )
             except Exception as e:
-                print(f"[VOD2] Falha POST player: {e}")
+                print(f"[VOD1] Falha POST player: {e}")
                 return ''
 
             src = r.json() if r.status_code == 200 else {}
             videoSource = src.get('videoSource') if isinstance(src, dict) else None
             if not videoSource:
-                print(f"[VOD2] videoSource ausente. Status={r.status_code} Body={str(r.text)[:200]}")
+                print(f"[VOD1] videoSource ausente. Status={r.status_code} Body={str(r.text)[:200]}")
                 return ''
 
             # Retorna com UA e Cookie no pipe
@@ -534,7 +168,7 @@ class VOD2:
             try:
                 session.get(self.base, headers=self.base_headers, timeout=20)
             except Exception as e:
-                print(f"[VOD2] aviso: GET homepage falhou: {e}")
+                print(f"[VOD1] aviso: GET homepage falhou: {e}")
 
             url = f'{self.base}/serie/{imdb}/{season}/{episode}'
             parsed_url_r = urlparse(url)
@@ -563,16 +197,16 @@ class VOD2:
                     if div:
                         break
                 except Exception as e:
-                    print(f"[VOD2] GET com Referer={parent} falhou: {e}")
+                    print(f"[VOD1] GET com Referer={parent} falhou: {e}")
                     continue
 
             if not div:
-                print("[VOD2] Bloco do episódio não encontrado.")
+                print("[VOD1] Bloco do episódio não encontrado.")
                 return ''
 
             data_contentid = div.get('data-contentid')
             if not data_contentid:
-                print("[VOD2] data-contentid ausente.")
+                print("[VOD1] data-contentid ausente.")
                 return ''
 
             api = f'{self.base}/api'
@@ -586,11 +220,11 @@ class VOD2:
                 src = r.json() if r.status_code == 200 else {}
                 id_ = src.get('data', {}).get('options', [{}])[0].get('ID')
             except Exception as e:
-                print(f"[VOD2] getOptions erro: {e}")
+                print(f"[VOD1] getOptions erro: {e}")
                 id_ = None
 
             if not id_:
-                print("[VOD2] ID do player não encontrado em getOptions.")
+                print("[VOD1] ID do player não encontrado em getOptions.")
                 return ''
 
             try:
@@ -603,16 +237,16 @@ class VOD2:
                 js = r.json() if r.status_code == 200 else {}
                 video_url = js.get('data', {}).get('video_url')
             except Exception as e:
-                print(f"[VOD2] getPlayer erro: {e}")
+                print(f"[VOD1] getPlayer erro: {e}")
                 video_url = None
 
             if not video_url:
-                print("[VOD2] video_url não obtido.")
+                print("[VOD1] video_url não obtido.")
                 return ''
 
             stream = self._fetch_player_video_source(session, video_url, r_)
         except Exception as e:
-            print(f"[VOD2] Erro geral tvshows: {e}")
+            print(f"[VOD1] Erro geral tvshows: {e}")
         return stream
 
     def movie(self, imdb):
@@ -627,7 +261,7 @@ class VOD2:
             try:
                 session.get(self.base, headers=self.base_headers, timeout=20)
             except Exception as e:
-                print(f"[VOD2] aviso: GET homepage falhou: {e}")
+                print(f"[VOD1] aviso: GET homepage falhou: {e}")
 
             url = f'{self.base}/filme/{imdb}'
             parsed_url_r = urlparse(url)
@@ -646,22 +280,22 @@ class VOD2:
                     if div_players:
                         break
                 except Exception as e:
-                    print(f"[VOD2] GET filme com Referer={parent} falhou: {e}")
+                    print(f"[VOD1] GET filme com Referer={parent} falhou: {e}")
                     continue
 
             if not div_players:
-                print("[VOD2] players_select não encontrado.")
+                print("[VOD1] players_select não encontrado.")
                 return ''
 
             try:
                 player_item = div_players.find('div', {'class': 'player_select_item'})
                 data_id = player_item.get('data-id', '') if player_item else ''
             except Exception as e:
-                print(f"[VOD2] Erro extraindo data-id: {e}")
+                print(f"[VOD1] Erro extraindo data-id: {e}")
                 data_id = ''
 
             if not data_id:
-                print("[VOD2] data-id ausente.")
+                print("[VOD1] data-id ausente.")
                 return ''
 
             api = f'{self.base}/api'
@@ -675,19 +309,19 @@ class VOD2:
                 js = r.json() if r.status_code == 200 else {}
                 video_url = js.get('data', {}).get('video_url')
             except Exception as e:
-                print(f"[VOD2] getPlayer erro: {e}")
+                print(f"[VOD1] getPlayer erro: {e}")
                 video_url = None
 
             if not video_url:
-                print("[VOD2] video_url não obtido.")
+                print("[VOD1] video_url não obtido.")
                 return ''
 
             stream = self._fetch_player_video_source(session, video_url, r_)
         except Exception as e:
-            print(f"[VOD2] Erro geral movie: {e}")
+            print(f"[VOD1] Erro geral movie: {e}")
         return stream
 
-class VOD3:
+class VOD2:
     def __init__(self, url):
         self.base = url if url.endswith('/') else url + '/'
         self.headers = {
@@ -950,7 +584,7 @@ class VOD3:
                             continue
 
         except Exception as e:
-            print("Erro no catálogo VOD3:", e)
+            print("Erro no catálogo VOD2:", e)
 
         return itens, next_page
 
@@ -979,7 +613,7 @@ class VOD3:
                     continue
 
         except Exception as e:
-            print("Erro na busca VOD3 (scrape_busca):", e)
+            print("Erro na busca VOD2 (scrape_busca):", e)
 
         return itens 
 
