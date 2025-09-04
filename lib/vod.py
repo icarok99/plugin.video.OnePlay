@@ -448,8 +448,9 @@ class VOD1:
 
 class VOD2:
     def __init__(self, url):
-        # base normalizada e headers base ao estilo "api_vod.VOD"
-        self.base = url
+        # Corrige a URL caso haja redirecionamento
+        self.base = self.get_last_base(url)
+
         self.parent_candidates = [
             "https://iframetester.com/",
             "https://iframetester.com",
@@ -465,6 +466,18 @@ class VOD2:
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Dest': 'iframe',
         }
+
+    def get_last_base(self, url):
+        last_url = url
+        try:
+            r = requests.get(url, headers={'User-Agent': USER_AGENT}, timeout=4, allow_redirects=True)
+            last_url = r.url
+        except Exception as e:
+            print(f"[VOD2] get_last_base erro: {e}")
+
+        if last_url and last_url.endswith('/'):
+            last_url = last_url[:-1]
+        return last_url
 
     def _fetch_player_video_source(self, session, video_url, r_):
         try:
