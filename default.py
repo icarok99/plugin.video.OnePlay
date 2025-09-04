@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from lib.helper import *
 from lib import xtream, pluto, imdb 
-from lib.vod import VOD1, VOD2
+from lib.vod import VOD1, VOD2, VOD3
 from lib.resolver import Resolver
 import re
 import base64
@@ -47,8 +47,9 @@ def is_update_needed_by_date():
 vip_url_desc = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x6f\x6e\x65\x70\x6c\x61\x79\x68\x64\x2e\x63\x6f\x6d\x2f\x64\x6f\x77\x6e\x6c\x6f\x61\x64\x2f\x76\x69\x70\x2f\x69\x6e\x66\x6f\x5f\x6f\x6e\x65\x70\x6c\x61\x79\x2e\x74\x78\x74'
 vip_url_dns = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x61\x64\x64\x6f\x6e\x2e\x6f\x6e\x65\x70\x6c\x61\x79\x68\x64\x2e\x6e\x65\x74\x2f\x64\x6e\x73\x5f\x76\x69\x70\x5f\x6f\x6e\x65\x70\x6c\x61\x79\x2e\x6a\x73\x6f\x6e'
 channels_api_gratis = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x67\x69\x73\x74\x2e\x67\x69\x74\x68\x75\x62\x2e\x63\x6f\x6d\x2f\x7a\x6f\x72\x65\x75\x2f\x37\x31\x61\x30\x39\x63\x33\x34\x30\x66\x62\x37\x31\x33\x61\x62\x34\x30\x38\x38\x35\x34\x61\x64\x62\x36\x35\x31\x39\x61\x34\x36'
-vod1_url = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x75\x70\x65\x72\x66\x6c\x69\x78\x61\x70\x69\x2e\x73\x68\x6f\x70'
-vod2_url = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x64\x6f\x72\x61\x6d\x61\x73\x6f\x6e\x6c\x69\x6e\x65\x2e\x6f\x72\x67'
+vod1_url = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x6e\x65\x74\x63\x69\x6e\x65\x2e\x6c\x61\x74'
+vod2_url = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x73\x75\x70\x65\x72\x66\x6c\x69\x78\x61\x70\x69\x2e\x77\x6f\x72\x6b'
+vod3_url = '\x68\x74\x74\x70\x73\x3a\x2f\x2f\x64\x6f\x72\x61\x6d\x61\x73\x6f\x6e\x6c\x69\x6e\x65\x2e\x6f\x72\x67'
 
 try:
     class Donate_(xbmcgui.WindowDialog):
@@ -211,7 +212,7 @@ Para trabalhar em equipe precisamos ter empatia, transparência, solidariedade e
     setcontent('movies')
     addMenuItem({'name': '[B][COLOR aquamarine]:::[/COLOR]BEM-VINDOS AO ONEPLAY - GRATUITO[COLOR aquamarine]:::[/COLOR][/B]', 'description': desc_oneplay}, destiny='')
     addMenuItem({'name': '[B]TV AO VIVO[/B]', 'description': 'Assista aos melhores canais gratuitamente', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','tv.png'))}, destiny='/tvs')
-    addMenuItem({'name': '[B]FILMES E SÉRIES[/B]', 'description': 'Assista aos melhores filmes e séries', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','filmeseseries.png'))}, destiny='/filmes_op1')
+    addMenuItem({'name': '[B]FILMES E SÉRIES[/B]', 'description': 'Assista aos melhores filmes e séries', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','filmeseseries.png'))}, destiny='/filmeseseries')
     addMenuItem({'name': '[B]DORAMAS[/B]', 'description': 'Assista aos melhores doramas', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','doramas.png'))}, destiny='/doramas')
     addMenuItem({'name': '[B]DOAÇÃO[/B]', 'description': 'Area de doação', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','doacao.png'))}, destiny='/donate')
     end()
@@ -291,8 +292,16 @@ def play_pluto(param):
             play_item.setInfo(type="Video", infoLabels={"Title": param.get('name', ''), "Plot": param.get('description', '')})    
         xbmc.Player().play(item=param.get('url', ''), listitem=play_item)
 
-@route('/filmes_op1')
-def filmes_op1(param):
+@route('/filmeseseries')
+def filmeseseries(param):
+    setcontent('movies')
+    addMenuItem({'name': '[B]SERVIDOR 1[/B]', 'description': 'Assista aos melhores filmes e séries', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','filmeseseries.png'))}, destiny='/filmes_op1')
+    addMenuItem({'name': '[B]SERVIDOR 2[/B]', 'description': 'Assista aos melhores filmes e séries', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','filmeseseries.png'))}, destiny='/filmes_op2')
+    end()
+    setview('List')
+
+@route('/filmes_op2')
+def filmes_op2(param):
     setcontent('movies')
     addMenuItem({'name': 'IMDB Filmes', 'description': '', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','filmes.png'))}, destiny='/imdb_movies')
     addMenuItem({'name': 'IMDB Series', 'description': '', 'iconimage': translate(os.path.join(homeDir, 'resources', 'images','series.png'))}, destiny='/imdb_series')
@@ -471,7 +480,180 @@ def open_imdb_episodes(param):
             #if not '#' in name_full and not '.' in name_full:
             addMenuItem({'name': name_full, 'description': description, 'iconimage': img, 'fanart': fanart, 'imdbnumber': imdb_id, 'season': season, 'episode': str(episode_number), 'serie_name': serie_name, 'playable': 'true'}, destiny='/play_resolve_series', folder=False)
         end()
+        setview('List')      
+
+    
+
+@route('/filmes_op1')
+def filmes_op1(param):
+    addMenuItem({'name': '[B]PESQUISAR[/B]','iconimage': translate(os.path.join(homeDir, 'resources', 'images','pesquisar.png')), 'description': ''}, destiny='/pesquisar_filmes1', folder=True)
+    addMenuItem({'name': '[B]FILMES[/B]','iconimage': translate(os.path.join(homeDir, 'resources', 'images','filmes.png')), 'description': ''}, destiny='/filmes1', folder=True)
+    addMenuItem({'name': '[B]SÉRIES[/B]','iconimage': translate(os.path.join(homeDir, 'resources', 'images','series.png')), 'description': ''}, destiny='/series1', folder=True)
+    end()
+    setview('WideList')
+
+# netcine
+@route('/pesquisar_filmes1')
+def pesquisar_filmes1(param):
+    pesquisa = param.get('pesquisa', '')
+    url = param.get('next', '')
+    if url:
+        try:
+            url = base64.b64decode(url[::-1]).decode('utf-8')
+        except:
+            pass    
+    if pesquisa:
+        itens_pesquisa, next_page, page = VOD1(vod1_url).pesquisa_filmes(url=url,pesquisa='')
+    else:
+        pesquisa = input_text('Pesquisa')
+        if pesquisa:
+            itens_pesquisa, next_page, page = VOD1(vod1_url).pesquisa_filmes(url='',pesquisa=pesquisa)
+        else:
+            return
+    if itens_pesquisa:
+        setcontent('movies')
+        for name, iconimage, link in itens_pesquisa:
+            try:
+                new_url = base64.b64encode(link.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url = link             
+            if '/tvshows/' in link:
+                addMenuItem({'name': name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'description': '', 'url': new_url}, destiny='/temporada_serie1', folder=True)
+            else:
+                addMenuItem({'name': name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'description': '', 'url': new_url}, destiny='/opcoes_filmes1', folder=False)
+        if next_page:
+            try:
+                new_url_next = base64.b64encode(next_page.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url_next = next_page            
+            addMenuItem({'name': 'Pagina %s'%page,'iconimage': translate(os.path.join(homeDir, 'resources', 'images','proximo.png')), 'description': '', 'pesquisa': pesquisa, 'next': new_url_next}, destiny='/pesquisar_filmes1', folder=True)                
+        end()
+        setview('Wall')
+    else:
+        notify('Nenhum item encontrado!')
+
+@route('/filmes1')
+def filmes1(param):
+    url = param.get('next', '')
+    if url:
+        try:
+            url = base64.b64decode(url[::-1]).decode('utf-8')
+        except:
+            pass    
+    filmes, next_page, page = VOD1(vod1_url).scraper_filmes(url)
+    if filmes:
+        setcontent('movies')
+        for name, iconimage, link in filmes:
+            try:
+                new_url = base64.b64encode(link.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url = link            
+            addMenuItem({'name': name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'description': '', 'url': new_url, 'playable': 'true'}, destiny='/opcoes_filmes1', folder=False)
+        if next_page:
+            try:
+                new_url_next = base64.b64encode(next_page.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url_next = next_page              
+            addMenuItem({'name': 'Pagina %s'%page,'iconimage': translate(os.path.join(homeDir, 'resources', 'images','proximo.png')), 'description': '', 'next': new_url_next}, destiny='/filmes1', folder=True)
+        end()
+        setview('Wall') 
+
+@route('/series1')
+def series1(param):
+    url = param.get('next', '')
+    if url:
+        try:
+            url = base64.b64decode(url[::-1]).decode('utf-8')
+        except:
+            pass      
+    series, next_page, page = VOD1(vod1_url).scraper_series(url)
+    if series:
+        setcontent('tvshows')
+        for name, iconimage, link in series:
+            try:
+                new_url = base64.b64encode(link.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url = link             
+            addMenuItem({'name': name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'description': '', 'url': new_url}, destiny='/temporada_serie1', folder=True)
+        if next_page:
+            try:
+                new_url_next = base64.b64encode(next_page.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url_next = next_page             
+            addMenuItem({'name': 'Pagina %s'%page,'iconimage': translate(os.path.join(homeDir, 'resources', 'images','proximo.png')), 'description': '', 'next': new_url_next}, destiny='/series1', folder=True)
+        end()
+        setview('Wall') 
+
+@route('/temporada_serie1')
+def temporada_serie1(param):
+    url = param.get('url', '')
+    if url:
+        try:
+            url = base64.b64decode(url[::-1]).decode('utf-8')
+        except:
+            pass     
+    serie_name, iconimage, fanart, s = VOD1(vod1_url).scraper_temporadas_series(url)
+    if s:
+        setcontent('tvshows')
+        addMenuItem({'name': serie_name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'fanart': fanart, 'description': ''}, destiny='', folder=True)
+        for season,name,link in s:
+            try:
+                new_url = base64.b64encode(link.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url = link             
+            addMenuItem({'name': name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'fanart': fanart, 'description': '', 'url': new_url, 'season': season}, destiny='/episodios_serie1', folder=True)
+        end()
         setview('List')
+
+@route('/episodios_serie1')
+def episodios_serie1(param):
+    url = param.get('url', '')
+    if url:
+        try:
+            url = base64.b64decode(url[::-1]).decode('utf-8')
+        except:
+            pass      
+    season = param.get('season', '')
+    serie_name, iconimage, fanart, e = VOD1(vod1_url).scraper_episodios_series(url,season)
+    if e:
+        setcontent('tvshows')
+        addMenuItem({'name': serie_name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'fanart': fanart, 'description': ''}, destiny='', folder=True)
+        for ep_name,name_especial,link in e:
+            try:
+                new_url = base64.b64encode(link.encode('utf-8')).decode('utf-8')[::-1]
+            except:
+                new_url = link              
+            addMenuItem({'name': ep_name.encode('utf-8', 'ignore'),'iconimage': iconimage, 'fanart': fanart, 'description': '', 'url': new_url, 'fullname': name_especial.encode('utf-8', 'ignore'), 'playable': 'true'}, destiny='/opcoes_filmes1', folder=False)
+        end()
+        setview('List') 
+
+@route('/opcoes_filmes1')
+def opcoes_filmes1(param):
+    name_movie = param.get('fullname', '')
+    if not name_movie:
+        name_movie = param.get('name', '')
+    iconimage = param.get('iconimage', '')
+    playable = param.get('playable', 'false')
+    url = param.get('url', '')
+    if url:
+        try:
+            url = base64.b64decode(url[::-1]).decode('utf-8')
+        except:
+            pass     
+    if name_movie and url:
+        op_ = VOD1(vod1_url).opcoes_filmes(url)
+        items_options = [name2 for name2,link in op_]
+        try:
+            op = select('SELECIONE UMA OPÇÃO:', items_options)
+            if op >= 0:
+                link = op_[op][1]
+                stream,sub = Resolver().resolverurls(link, '')
+                if stream:
+                    play_video({'url': stream, 'sub': sub, 'name': name_movie, 'iconimage': iconimage, 'description': '', 'playable': playable})
+                else:
+                    notify('Stream indisponivel') 
+        except:
+            notify('Stream indisponivel')
 
 #doramasonline
 @route('/doramas')
@@ -489,7 +671,7 @@ def search_doramas(param):
     if not query:
         return
 
-    lista = VOD2(vod2_url).search_doramas(query)
+    lista = VOD3(vod3_url).search_doramas(query)
 
     if lista:
         setcontent('tvshows')
@@ -505,7 +687,7 @@ def search_doramas(param):
 @route('/doramas_dublados')
 def doramas_dublados(param):
     page = int(param.get('page', '1'))
-    lista, next_page = VOD2(vod2_url).scraper_dublados(page=page)
+    lista, next_page = VOD3(vod3_url).scraper_dublados(page=page)
 
     if lista:
         setcontent('tvshows')
@@ -540,7 +722,7 @@ def doramas_dublados(param):
 @route('/doramas_legendados')
 def doramas_legendados(param):
     page = int(param.get('page', '1'))
-    lista, next_page = VOD2(vod2_url).scraper_legendados(page=page)
+    lista, next_page = VOD3(vod3_url).scraper_legendados(page=page)
 
     if lista:
         setcontent('tvshows')
@@ -594,7 +776,7 @@ def scraper_episodios(param):
         setview()
         return
 
-    lista = VOD2(vod2_url).scraper_episodios(url)
+    lista = VOD3(vod3_url).scraper_episodios(url)
     if lista:
         setcontent('tvshows')
         for title, link, img, href in lista:
@@ -624,7 +806,7 @@ def doramas_players(param):
         notify('Link inválido para player!')
         return
 
-    opcoes = VOD2(vod2_url).scraper_players(url)
+    opcoes = VOD3(vod3_url).scraper_players(url)
     if not opcoes:
         notify('Nenhum player encontrado!')
         return
@@ -643,7 +825,7 @@ def doramas_players(param):
         op = select('SELECIONE UMA OPÇÃO:', items_options)
         if op >= 0:
             link = opcoes[op][1]
-            stream, sub = Resolver().resolverurls(link, vod2_url)
+            stream, sub = Resolver().resolverurls(link, vod3_url)
             if stream:
                 play_video({
                     'url': stream,
@@ -908,7 +1090,7 @@ def play_resolve_movies(param):
     description = param.get('description', '')
     #name = serie_name + ' S' + str(season) + 'E' + str(episode)
     name = param.get('name', '')
-    url = VOD1(vod1_url).movie(imdb)
+    url = VOD2(vod2_url).movie(imdb)
     #url = api_vod.VOD().movie(imdb)
     if url:
         notify('Escolha o audio portugues nos ajustes')
@@ -976,7 +1158,7 @@ def play_resolve_series(param):
     imdb = param.get('imdbnumber', '')
     description = param.get('description', '')
     name = serie_name + ' S' + str(season) + 'E' + str(episode)
-    url = VOD1(vod1_url).tvshows(imdb,season,episode)
+    url = VOD2(vod2_url).tvshows(imdb,season,episode)
     if url:
         notify('Escolha o audio portugues nos ajustes')
 
