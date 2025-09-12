@@ -248,13 +248,53 @@ def tvgratis(param):
 @route('/pluto_tv')
 def pluto_tv(param):
     channels = pluto.playlist_pluto()
-    if channels:
-        setcontent('movies')
-        for channel in channels:
-            channel_name,desc,thumbnail,stream = channel
-            addMenuItem({'name': channel_name, 'description': desc, 'iconimage': thumbnail, 'url': stream}, destiny='/play_pluto', folder=False)
-        end()
-        setview('List') 
+    if not channels:
+        return
+
+    setcontent('movies')
+
+    def format_program(prog):
+        """Formata horário e título em amarelo, descrição normal."""
+        if not prog:
+            return ""
+        start = prog.get('start', '?')[11:16]
+        title = prog.get('title', '')
+        desc = prog.get('description', '')
+        return f"[COLOR yellow][{start}] {title}[/COLOR]\n{desc}"
+
+    def add_channel_item(channel):
+        """Adiciona um canal ao menu de forma elegante."""
+        channel_name = channel.get('title', 'Sem nome')
+        thumb = channel.get('thumbnail', '')
+        stream = channel.get('stream_url', '')
+
+        current = channel.get('current_program')
+        nxt = channel.get('next_program')
+
+        # Nome do item: Canal + título atual em amarelo
+        item_name = f"{channel_name} - [COLOR yellow]{current.get('title','')}[/COLOR]" if current else channel_name
+
+        # Descrição formatada
+        desc_parts = [format_program(current), format_program(nxt)]
+        desc = "\n\n".join([p for p in desc_parts if p])  # ignora vazios
+
+        addMenuItem(
+            {
+                'name': item_name,
+                'description': desc,
+                'iconimage': thumb,
+                'url': stream
+            },
+            destiny='/play_pluto',
+            folder=False
+        )
+
+    # Adiciona todos os canais
+    for channel in channels:
+        add_channel_item(channel)
+
+    end()
+    setview('List')
 
 
 @route('/play_pluto')
