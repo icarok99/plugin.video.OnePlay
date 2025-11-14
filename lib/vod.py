@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from urllib.parse import urlparse, parse_qs, unquote, quote_plus
+from urllib.parse import urlparse, parse_qs, unquote, quote_plus, urlencode
 try:
     from lib.client import cfscraper
 except ImportError:
@@ -448,9 +448,8 @@ class VOD1:
 
 class VOD2:
     def __init__(self, url):
-        # Corrige a URL caso haja redirecionamento
-        self.base = self.get_last_base(url)
-
+        # base normalizada e headers base ao estilo "api_vod.VOD"
+        self.base = url
         self.parent_candidates = [
             "https://iframetester.com/",
             "https://iframetester.com",
@@ -466,18 +465,6 @@ class VOD2:
             'Sec-Fetch-Mode': 'navigate',
             'Sec-Fetch-Dest': 'iframe',
         }
-
-    def get_last_base(self, url):
-        last_url = url
-        try:
-            r = requests.get(url, headers={'User-Agent': USER_AGENT}, timeout=4, allow_redirects=True)
-            last_url = r.url
-        except Exception as e:
-            print(f"[VOD2] get_last_base erro: {e}")
-
-        if last_url and last_url.endswith('/'):
-            last_url = last_url[:-1]
-        return last_url
 
     def _fetch_player_video_source(self, session, video_url, r_):
         try:
@@ -715,6 +702,7 @@ class VOD3:
     def _clean_aviso_url(self, url):
         """
         Remove camada 'aviso' do doramasonline e retorna a URL real do player.
+        Mantido por compatibilidade, mas atualmente os players não usam mais aviso.
         """
         parsed = urlparse(url)
         if "doramasonline.org/aviso" in url and "url=" in parsed.query:
@@ -869,31 +857,67 @@ class VOD3:
         return episodios
 
     def scraper_players(self, url):
+        """
+        Nova lógica para DoramasOnline:
+        - Usa a lista <li class="dooplay_player_option" data-nume="N"> para nomes.
+        - Associa cada N ao bloco #source-player-N dentro de #dooplay_player_content,
+          capturando o href do <a> (go.php?auth=...).
+        - Fallback: captura iframes diretos caso existam.
+        """
         opcoes = []
         try:
             print(f"[scraper_players] Iniciando scrape em: {url}")
-            r = requests.get(url, headers=self.headers)
+            r = requests.get(url, headers=self.headers, timeout=15)
             soup = self.soup(r.text)
 
-            names = [li.find('span', {'class': 'title'}).text
-                     for li in soup.find_all('li', class_='dooplay_player_option')]
-            print(f"[scraper_players] Nomes encontrados: {names}")
+            # Mapa nume -> nome (ex.: '1' -> 'DUBLADO')
+            nomes_por_nume = {}
+            for li in soup.select('ul#playeroptionsul li.dooplay_player_option'):
+                try:
+                    nume = (li.get('data-nume') or '').strip()
+                    name_el = li.find('span', {'class': 'title'})
+                    name = (name_el.text or '').strip() if name_el else f'Opção {nume or "?"}'
+                    if nume:
+                        nomes_por_nume[nume] = name
+                except Exception:
+                    continue
+            print(f"[scraper_players] Nomes por nume: {nomes_por_nume}")
 
-            iframes = soup.find_all("iframe", class_=lambda x: x and x.startswith("metaframe"))
-            print(f"[scraper_players] Iframes encontrados: {len(iframes)}")
+            # Para cada bloco de source, pegar o link <a href="...">
+            for box in soup.select('#dooplay_player_content .source-box'):
+                box_id = box.get('id', '')  # ex.: source-player-3
+                m = re.search(r'source-player-(\d+)', box_id or '')
+                nume = m.group(1) if m else None
 
-            if iframes:
-                mode = 1 if len(names) == len(iframes) else 2
-                print(f"[scraper_players] Modo de associação: {mode}")
-                for n, iframe in enumerate(iframes):
-                    name = names[n] if mode == 1 else f"Opção {n + 1}"
-                    link = iframe.get("src", "")
-                    link = self._clean_aviso_url(link)  # limpa aviso
-                    print(f"[scraper_players] Player {n+1}: Nome='{name}' | Link='{link}'")
+                a = box.find('a', href=True)
+                if a and a.get('href'):
+                    link = a['href'].strip()
+                    # Sem camada 'aviso' agora; usar o link como está
+                    name = nomes_por_nume.get(nume, f'Opção {nume}') if nume else 'Opção'
+                    opcoes.append((name, link))
+                    print(f"[scraper_players] Fonte {box_id}: Nome='{name}' | Link='{link}'")
+                    continue
+
+                # Fallback: se não houver <a>, tente iframe dentro do box
+                iframe = box.find('iframe', src=True)
+                if iframe:
+                    link = iframe['src'].strip()
+                    name = nomes_por_nume.get(nume, f'Opção {nume}') if nume else 'Opção'
+                    opcoes.append((name, link))
+                    print(f"[scraper_players] Fonte {box_id} via iframe: Nome='{name}' | Link='{link}'")
+
+            # Fallback global: se nada encontrado acima, buscar qualquer iframe na página
+            if not opcoes:
+                iframes = soup.find_all("iframe", src=True)
+                print(f"[scraper_players] Fallback iframes na página: {len(iframes)}")
+                for n, iframe in enumerate(iframes, start=1):
+                    link = iframe.get("src", "").strip()
                     if link:
+                        name = f"Opção {n}"
                         opcoes.append((name, link))
+
         except Exception as e:
-            print("Erro ao extrair players:", e)
+            print("Erro ao extrair players (novo):", e)
 
         print(f"[scraper_players] Total de opções extraídas: {len(opcoes)}")
         return opcoes
@@ -1708,5 +1732,4 @@ class Resolver:
             stream = stream.strip()
         except:
             pass
-        return stream, sub                                    
-
+        return stream, sub
