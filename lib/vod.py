@@ -18,6 +18,7 @@ try:
 except ImportError:
     import tear
 import socket
+import base64
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -702,7 +703,7 @@ class VOD3:
     def _clean_aviso_url(self, url):
         """
         Remove camada 'aviso' do doramasonline e retorna a URL real do player.
-        Mantido por compatibilidade, mas atualmente os players não usam mais aviso.
+        Ex.: doramasonline.org/aviso?url=<encoded>
         """
         parsed = urlparse(url)
         if "doramasonline.org/aviso" in url and "url=" in parsed.query:
@@ -710,6 +711,141 @@ class VOD3:
             if "url" in qs:
                 return unquote(qs["url"][0])
         return url
+
+    def follow_redirects(self, url):
+        """
+        Segue os redirecionamentos/fluxos JS/FORM encontrados nos HTMLs
+        (window.location.href, meta refresh, forms POST automáticos, tokens base64).
+        Retorna a URL final (ou a última URL alcançada).
+        """
+        import base64
+        import re
+
+        session = requests.Session()
+        session.headers.update(self.headers)
+
+        current = url
+        visited = set()
+        try:
+            while True:
+                # prevenir loops
+                if current in visited:
+                    return current
+                visited.add(current)
+
+                dnsresolver_.change(current)
+                try:
+                    r = session.get(current, timeout=12, allow_redirects=True)
+                except Exception:
+                    # devolve a última conhecida se GET falhar
+                    return current
+
+                html = r.text or ''
+                final_url = r.url
+
+                # 1) window.location.href="..."
+                m = re.search(r'window\.location\.href\s*=\s*["\']([^"\']+)["\']', html)
+                if m:
+                    next_url = m.group(1)
+                    # url pode ser relativa
+                    if next_url.startswith('/'):
+                        parsed = urlparse(final_url)
+                        next_url = f'{parsed.scheme}://{parsed.netloc}{next_url}'
+                    current = next_url
+                    continue
+
+                # 2) window.location.replace("...")
+                m = re.search(r'window\.location\.replace\s*\(\s*["\']([^"\']+)["\']\s*\)', html)
+                if m:
+                    next_url = m.group(1)
+                    if next_url.startswith('/'):
+                        parsed = urlparse(final_url)
+                        next_url = f'{parsed.scheme}://{parsed.netloc}{next_url}'
+                    current = next_url
+                    continue
+
+                # 3) meta refresh
+                m = re.search(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]*content=["\']\d+\s*;\s*url=([^"\']+)["\']', html, re.I)
+                if m:
+                    next_url = m.group(1)
+                    if next_url.startswith('/'):
+                        parsed = urlparse(final_url)
+                        next_url = f'{parsed.scheme}://{parsed.netloc}{next_url}'
+                    current = next_url
+                    continue
+
+                # 4) limpeza aviso doramasonline
+                next_url = self._clean_aviso_url(current)
+                if next_url != current:
+                    current = next_url
+                    continue
+
+                # 5) procura formulário (POST) — como o URL4
+                soup = BeautifulSoup(html, 'html.parser')
+                form = soup.find('form')
+                if form and form.get('action'):
+                    action = form.get('action')
+                    # corrigir action relativa
+                    if action.startswith('/'):
+                        parsed = urlparse(final_url)
+                        action = f'{parsed.scheme}://{parsed.netloc}{action}'
+                    data = {}
+                    for inp in form.find_all('input'):
+                        name = inp.get('name')
+                        value = inp.get('value', '')
+                        if name:
+                            data[name] = value
+                    # tentar submeter
+                    try:
+                        r2 = session.post(action, data=data, timeout=12, allow_redirects=True)
+                    except Exception:
+                        return final_url
+                    html2 = r2.text or ''
+                    # procurar tokens base64 grandes que contenham http
+                    b64_values = re.findall(r'([A-Za-z0-9+/]{16,}={0,2})', html2)
+                    for raw in b64_values:
+                        try:
+                            dec = base64.b64decode(raw).decode('utf-8', errors='ignore')
+                            if dec.startswith('http'):
+                                return dec
+                        except Exception:
+                            continue
+                    # se resposta redirectou por Location, usar
+                    if r2.url and r2.url != final_url:
+                        current = r2.url
+                        continue
+                    # atualizar para efetuar nova iteração com html2
+                    html = html2
+                    current = r2.url or current
+                    continue
+
+                # 6) procurar token em query string da página atual
+                parsed_final = urlparse(final_url)
+                qs = parse_qs(parsed_final.query)
+                for k, v in qs.items():
+                    for item in v:
+                        try:
+                            dec = base64.b64decode(item).decode('utf-8', errors='ignore')
+                            if dec.startswith('http'):
+                                return dec
+                        except Exception:
+                            pass
+
+                # 7) procurar token base64 embutido no html (ex: token=...)
+                m = re.search(r'token\s*=\s*["\']?([A-Za-z0-9+/=]{16,})["\']?', html)
+                if m:
+                    try:
+                        dec = base64.b64decode(m.group(1)).decode('utf-8', errors='ignore')
+                        if dec.startswith('http'):
+                            return dec
+                    except Exception:
+                        pass
+
+                # 8) nada encontrado: retornar última URL efetiva
+                return final_url
+
+        except Exception:
+            return current
 
     def scraper_dublados(self, page=1):
         url = f'{self.base}br/generos/dublado/page/{page}/'
@@ -756,206 +892,54 @@ class VOD3:
                     season_num = temp_num[0] if temp_num else '1'
 
                     lista = temporada.select('ul.episodios > li')
-
-                    for idx, li in enumerate(lista, start=1):
-                        a = li.select_one('.episodiotitle a')
-                        img = li.select_one('.imagen img')
-
-                        if not a:
+                    for ep in lista:
+                        try:
+                            a = ep.find('a')
+                            href = a.get('href', '')
+                            title = ep.text.strip()
+                            episodios.append((title, href, season_num, serie_name, self.base))
+                        except:
                             continue
+                return episodios
 
-                        # tenta obter número do episódio a partir de .numerando (ex: "1 - 1")
-                        num_div = li.select_one('.numerando')
-                        ep_num = ''
-
-                        if num_div and num_div.text:
-                            nums = re.findall(r'\d+', num_div.text)
-
-                            if len(nums) >= 2:
-                                # formato "temporada - episodio"
-                                season_num = nums[0]
-                                ep_num = nums[1]
-                            elif len(nums) == 1:
-                                ep_num = nums[0]
-                        else:
-                            # se não houver numerando, tenta extrair do texto do link
-                            nums = re.findall(r'\d+', a.text)
-                            if nums:
-                                ep_num = nums[-1]
-                            else:
-                                ep_num = str(idx)
-
-                        ep_title_text = a.text.strip()
-
-                        # monta título: "<Serie> - S{season}E{episode} - <Título>"
-                        if season_num and ep_num:
-                            se_part = f"S{season_num}E{ep_num}"
-                        else:
-                            se_part = f"T{season_num} - Ep{ep_num if ep_num else ''}".strip()
-
-                        if serie_name:
-                            full_title = f"{serie_name} - {se_part}"
-                        else:
-                            full_title = f"{se_part} - {ep_title_text}"
-
-                        link = a.get('href', '').strip()
-                        thumb = img.get('src', '').strip() if img else ''
-
-                        episodios.append((full_title, link, thumb, url))
-
-            else:
-                # fallback: procura por itens de episódios soltos na página
-                lista = (
-                    soup.select('ul.episodios > li')
-                    or soup.select('div.episodios li')
-                    or soup.find_all('li')
-                )
-
-                for li in lista:
-                    a = li.select_one('.episodiotitle a') or li.find('a')
-                    img = li.select_one('.imagen img')
-
-                    if not a:
-                        continue
-
-                    num_div = li.select_one('.numerando')
-                    season_num = ''
-                    ep_num = ''
-
-                    if num_div and num_div.text:
-                        nums = re.findall(r'\d+', num_div.text)
-                        if len(nums) >= 2:
-                            season_num, ep_num = nums[0], nums[1]
-                        elif len(nums) == 1:
-                            ep_num = nums[0]
-
-                    # tenta extrair ep se ainda não definido
-                    if not ep_num:
-                        nums = re.findall(r'\d+', a.text)
-                        if nums:
-                            ep_num = nums[-1]
-
-                    if not season_num:
-                        season_num = '1'
-
-                    ep_title_text = a.text.strip()
-                    se_part = f"S{season_num}E{ep_num}" if ep_num else f"T{season_num}"
-
-                    if serie_name:
-                        full_title = f"{serie_name} - {se_part} - {ep_title_text}"
-                    else:
-                        full_title = f"{se_part} - {ep_title_text}"
-
-                    link = a.get('href', '').strip()
-                    thumb = img.get('src', '').strip() if img else ''
-
-                    episodios.append((full_title, link, thumb, url))
+            # fallback: lista simples
+            lista = soup.select('ul.episodios > li')
+            for ep in lista:
+                try:
+                    a = ep.find('a')
+                    href = a.get('href', '')
+                    title = ep.text.strip()
+                    episodios.append((title, href, '1', serie_name, self.base))
+                except:
+                    continue
 
         except Exception as e:
-            print('Erro ao extrair episódios:', e)
+            print("Erro no scraper_episodios:", e)
 
         return episodios
 
-    def scraper_players(self, url):
-        """
-        Nova lógica para DoramasOnline:
-        - Usa a lista <li class="dooplay_player_option" data-nume="N"> para nomes.
-        - Associa cada N ao bloco #source-player-N dentro de #dooplay_player_content,
-          capturando o href do <a> (go.php?auth=...).
-        - Fallback: captura iframes diretos caso existam.
-        """
-        opcoes = []
-        try:
-            print(f"[scraper_players] Iniciando scrape em: {url}")
-            r = requests.get(url, headers=self.headers, timeout=15)
-            soup = self.soup(r.text)
-
-            # Mapa nume -> nome (ex.: '1' -> 'DUBLADO')
-            nomes_por_nume = {}
-            for li in soup.select('ul#playeroptionsul li.dooplay_player_option'):
-                try:
-                    nume = (li.get('data-nume') or '').strip()
-                    name_el = li.find('span', {'class': 'title'})
-                    name = (name_el.text or '').strip() if name_el else f'Opção {nume or "?"}'
-                    if nume:
-                        nomes_por_nume[nume] = name
-                except Exception:
-                    continue
-            print(f"[scraper_players] Nomes por nume: {nomes_por_nume}")
-
-            # Para cada bloco de source, pegar o link <a href="...">
-            for box in soup.select('#dooplay_player_content .source-box'):
-                box_id = box.get('id', '')  # ex.: source-player-3
-                m = re.search(r'source-player-(\d+)', box_id or '')
-                nume = m.group(1) if m else None
-
-                a = box.find('a', href=True)
-                if a and a.get('href'):
-                    link = a['href'].strip()
-                    # Sem camada 'aviso' agora; usar o link como está
-                    name = nomes_por_nume.get(nume, f'Opção {nume}') if nume else 'Opção'
-                    opcoes.append((name, link))
-                    print(f"[scraper_players] Fonte {box_id}: Nome='{name}' | Link='{link}'")
-                    continue
-
-                # Fallback: se não houver <a>, tente iframe dentro do box
-                iframe = box.find('iframe', src=True)
-                if iframe:
-                    link = iframe['src'].strip()
-                    name = nomes_por_nume.get(nume, f'Opção {nume}') if nume else 'Opção'
-                    opcoes.append((name, link))
-                    print(f"[scraper_players] Fonte {box_id} via iframe: Nome='{name}' | Link='{link}'")
-
-            # Fallback global: se nada encontrado acima, buscar qualquer iframe na página
-            if not opcoes:
-                iframes = soup.find_all("iframe", src=True)
-                print(f"[scraper_players] Fallback iframes na página: {len(iframes)}")
-                for n, iframe in enumerate(iframes, start=1):
-                    link = iframe.get("src", "").strip()
-                    if link:
-                        name = f"Opção {n}"
-                        opcoes.append((name, link))
-
-        except Exception as e:
-            print("Erro ao extrair players (novo):", e)
-
-        print(f"[scraper_players] Total de opções extraídas: {len(opcoes)}")
-        return opcoes
-
     def _scrape_catalogo(self, url):
-        """
-        Scrape para catálogo. Retorna (itens, next_page).
-        Detecta paginação por /page/N, .pagination ou .resppages.
-        """
         itens = []
         next_page = False
         try:
             r = requests.get(url, headers=self.headers, timeout=15)
             soup = self.soup(r.text)
 
-            container = soup.find("div", class_=lambda x: x and x.startswith("items")) \
-                        or soup.find("div", {"id": "box_movies"}) \
-                        or soup.find("div", class_="items") \
-                        or soup
+            posts = soup.find_all("article") or soup.find_all("div", class_="item")
 
-            artigos = container.find_all("article", id=lambda x: x and x.startswith("post")) \
-                      or container.find_all("div", class_="movie-item") \
-                      or container.find_all("div", class_="item")
-
-            for art in artigos:
+            for post in posts:
                 try:
-                    a = art.find("a")
+                    a = post.find("a")
                     href = a.get("href", "") if a else ""
-                    title_tag = art.find("h3") or a
+                    title_tag = post.find("h3") or post.find("h2") or a
                     title = title_tag.text.strip() if title_tag else href
-                    img = (art.find("img").get("src", "") if art.find("img") else "")
-                    itens.append((title, href, img, title, url))
-                except Exception:
+                    img = (post.find("img").get("src", "") if post.find("img") else "")
+                    itens.append((title, href, img, title, self.base))
+                except:
                     continue
 
             paginacao = soup.find("div", class_="pagination") \
-                        or soup.find("div", {"id": "paginador"}) \
-                        or soup.find("div", class_="resppages")
+                        or soup.find("div", class_="nav-links")
 
             if paginacao:
                 # tenta achar href com /page/N primeiro
@@ -992,9 +976,6 @@ class VOD3:
         return itens, next_page
 
     def _scrape_busca(self, url):
-        """
-        Scrape para busca. RETORNA SOMENTE itens (sem next_page).
-        """
         itens = []
         try:
             r = requests.get(url, headers=self.headers, timeout=15)
@@ -1018,7 +999,7 @@ class VOD3:
         except Exception as e:
             print("Erro na busca VOD3 (scrape_busca):", e)
 
-        return itens 
+        return itens
 
     
 class Tube:
