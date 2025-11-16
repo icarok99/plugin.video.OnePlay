@@ -18,7 +18,6 @@ try:
 except ImportError:
     import tear
 import socket
-import base64
 import requests
 from bs4 import BeautifulSoup
 import json
@@ -703,7 +702,7 @@ class VOD3:
     def _clean_aviso_url(self, url):
         """
         Remove camada 'aviso' do doramasonline e retorna a URL real do player.
-        Ex.: doramasonline.org/aviso?url=<encoded>
+        Mantido por compatibilidade, mas atualmente os players não usam mais aviso.
         """
         parsed = urlparse(url)
         if "doramasonline.org/aviso" in url and "url=" in parsed.query:
@@ -711,141 +710,6 @@ class VOD3:
             if "url" in qs:
                 return unquote(qs["url"][0])
         return url
-
-    def follow_redirects(self, url):
-        """
-        Segue os redirecionamentos/fluxos JS/FORM encontrados nos HTMLs
-        (window.location.href, meta refresh, forms POST automáticos, tokens base64).
-        Retorna a URL final (ou a última URL alcançada).
-        """
-        import base64
-        import re
-
-        session = requests.Session()
-        session.headers.update(self.headers)
-
-        current = url
-        visited = set()
-        try:
-            while True:
-                # prevenir loops
-                if current in visited:
-                    return current
-                visited.add(current)
-
-                dnsresolver_.change(current)
-                try:
-                    r = session.get(current, timeout=12, allow_redirects=True)
-                except Exception:
-                    # devolve a última conhecida se GET falhar
-                    return current
-
-                html = r.text or ''
-                final_url = r.url
-
-                # 1) window.location.href="..."
-                m = re.search(r'window\.location\.href\s*=\s*["\']([^"\']+)["\']', html)
-                if m:
-                    next_url = m.group(1)
-                    # url pode ser relativa
-                    if next_url.startswith('/'):
-                        parsed = urlparse(final_url)
-                        next_url = f'{parsed.scheme}://{parsed.netloc}{next_url}'
-                    current = next_url
-                    continue
-
-                # 2) window.location.replace("...")
-                m = re.search(r'window\.location\.replace\s*\(\s*["\']([^"\']+)["\']\s*\)', html)
-                if m:
-                    next_url = m.group(1)
-                    if next_url.startswith('/'):
-                        parsed = urlparse(final_url)
-                        next_url = f'{parsed.scheme}://{parsed.netloc}{next_url}'
-                    current = next_url
-                    continue
-
-                # 3) meta refresh
-                m = re.search(r'<meta[^>]+http-equiv=["\']refresh["\'][^>]*content=["\']\d+\s*;\s*url=([^"\']+)["\']', html, re.I)
-                if m:
-                    next_url = m.group(1)
-                    if next_url.startswith('/'):
-                        parsed = urlparse(final_url)
-                        next_url = f'{parsed.scheme}://{parsed.netloc}{next_url}'
-                    current = next_url
-                    continue
-
-                # 4) limpeza aviso doramasonline
-                next_url = self._clean_aviso_url(current)
-                if next_url != current:
-                    current = next_url
-                    continue
-
-                # 5) procura formulário (POST) — como o URL4
-                soup = BeautifulSoup(html, 'html.parser')
-                form = soup.find('form')
-                if form and form.get('action'):
-                    action = form.get('action')
-                    # corrigir action relativa
-                    if action.startswith('/'):
-                        parsed = urlparse(final_url)
-                        action = f'{parsed.scheme}://{parsed.netloc}{action}'
-                    data = {}
-                    for inp in form.find_all('input'):
-                        name = inp.get('name')
-                        value = inp.get('value', '')
-                        if name:
-                            data[name] = value
-                    # tentar submeter
-                    try:
-                        r2 = session.post(action, data=data, timeout=12, allow_redirects=True)
-                    except Exception:
-                        return final_url
-                    html2 = r2.text or ''
-                    # procurar tokens base64 grandes que contenham http
-                    b64_values = re.findall(r'([A-Za-z0-9+/]{16,}={0,2})', html2)
-                    for raw in b64_values:
-                        try:
-                            dec = base64.b64decode(raw).decode('utf-8', errors='ignore')
-                            if dec.startswith('http'):
-                                return dec
-                        except Exception:
-                            continue
-                    # se resposta redirectou por Location, usar
-                    if r2.url and r2.url != final_url:
-                        current = r2.url
-                        continue
-                    # atualizar para efetuar nova iteração com html2
-                    html = html2
-                    current = r2.url or current
-                    continue
-
-                # 6) procurar token em query string da página atual
-                parsed_final = urlparse(final_url)
-                qs = parse_qs(parsed_final.query)
-                for k, v in qs.items():
-                    for item in v:
-                        try:
-                            dec = base64.b64decode(item).decode('utf-8', errors='ignore')
-                            if dec.startswith('http'):
-                                return dec
-                        except Exception:
-                            pass
-
-                # 7) procurar token base64 embutido no html (ex: token=...)
-                m = re.search(r'token\s*=\s*["\']?([A-Za-z0-9+/=]{16,})["\']?', html)
-                if m:
-                    try:
-                        dec = base64.b64decode(m.group(1)).decode('utf-8', errors='ignore')
-                        if dec.startswith('http'):
-                            return dec
-                    except Exception:
-                        pass
-
-                # 8) nada encontrado: retornar última URL efetiva
-                return final_url
-
-        except Exception:
-            return current
 
     def scraper_dublados(self, page=1):
         url = f'{self.base}br/generos/dublado/page/{page}/'
@@ -1154,7 +1018,7 @@ class VOD3:
         except Exception as e:
             print("Erro na busca VOD3 (scrape_busca):", e)
 
-        return itens
+        return itens 
 
     
 class Tube:
