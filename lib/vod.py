@@ -21,6 +21,7 @@ import socket
 import requests
 from bs4 import BeautifulSoup
 import json
+import base64
 
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
 
@@ -711,7 +712,26 @@ class VOD3:
                 return unquote(qs["url"][0])
         return url
 
-    def scraper_dublados(self, page=1):
+    
+    def _decode_auth_url(self, url):
+        try:
+            parsed = urlparse(url)
+            qs = parse_qs(parsed.query)
+            if "auth" not in qs:
+                return url
+            b64_data = qs["auth"][0]
+            decoded = base64.b64decode(b64_data).decode("utf-8")
+            js = json.loads(decoded)
+            real_url = js.get("url", "")
+            if not real_url:
+                return url
+            real_url = self._clean_aviso_url(real_url)
+            return real_url
+        except Exception as e:
+            print(f"[decode_auth_url] erro: {e}")
+            return url
+
+def scraper_dublados(self, page=1):
         url = f'{self.base}br/generos/dublado/page/{page}/'
         return self._scrape_catalogo(url)
 
@@ -892,13 +912,15 @@ class VOD3:
                 a = box.find('a', href=True)
                 if a and a.get('href'):
                     link = a['href'].strip()
+                    if 'auth=' in link:
+                        link = self._decode_auth_url(link)
                     # Sem camada 'aviso' agora; usar o link como está
                     name = nomes_por_nume.get(nume, f'Opção {nume}') if nume else 'Opção'
                     opcoes.append((name, link))
                     print(f"[scraper_players] Fonte {box_id}: Nome='{name}' | Link='{link}'")
                     continue
 
-                # Fallback: se não houver <a>, tente iframe dentro do box
+                # (fallback removido por solicitação)
                 iframe = box.find('iframe', src=True)
                 if iframe:
                     link = iframe['src'].strip()
@@ -907,20 +929,7 @@ class VOD3:
                     print(f"[scraper_players] Fonte {box_id} via iframe: Nome='{name}' | Link='{link}'")
 
             # Fallback global: se nada encontrado acima, buscar qualquer iframe na página
-            if not opcoes:
-                iframes = soup.find_all("iframe", src=True)
-                print(f"[scraper_players] Fallback iframes na página: {len(iframes)}")
-                for n, iframe in enumerate(iframes, start=1):
-                    link = iframe.get("src", "").strip()
-                    if link:
-                        name = f"Opção {n}"
-                        opcoes.append((name, link))
-
-        except Exception as e:
-            print("Erro ao extrair players (novo):", e)
-
-        print(f"[scraper_players] Total de opções extraídas: {len(opcoes)}")
-        return opcoes
+            return opcoes
 
     def _scrape_catalogo(self, url):
         """
