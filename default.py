@@ -319,25 +319,17 @@ def play_pluto(param):
             play_item.setProperty('inputstream', is_helper.inputstream_addon)
         else:
             play_item.setProperty('inputstreamaddon', is_helper.inputstream_addon)
-
-        # REMOVIDO (depreciado):
-        # play_item.setProperty("inputstream.adaptive.manifest_type", "hls")
-
+        play_item.setProperty("inputstream.adaptive.manifest_type", "hls")
         if '|' in url:
             play_item.setProperty("inputstream.adaptive.manifest_headers", header)
-
-        # SUBSTITUIÇÃO CORRETA PARA LIVE:
-        play_item.setProperty('inputstream.adaptive.manifest_upd_params', 'full-segments')
-
+        play_item.setProperty('inputstream.adaptive.manifest_update_parameter', 'full')
         play_item.setProperty('inputstream.adaptive.is_realtime_stream', 'true')
-
         if kversion > 19:
             info = play_item.getVideoInfoTag()
             info.setTitle(param.get('name', 'Pluto TV'))
             info.setPlot(param.get('description', ''))
         else:
             play_item.setInfo(type="Video", infoLabels={"Title": param.get('name', ''), "Plot": param.get('description', '')})    
-
         xbmc.Player().play(item=param.get('url', ''), listitem=play_item)
 
 @route('/filmeseseries')
