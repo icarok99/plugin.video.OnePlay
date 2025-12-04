@@ -1,13 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Pluto TV helper corrigido.
-- Retorna canais com guia de programação (Agora / Próximo).
-- Datetimes timezone-aware em UTC.
-- Estrutura de retorno compatível: cada canal traz `programs`, `current_program`, `next_program`.
-"""
-
 import uuid
-import json
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
@@ -21,7 +13,7 @@ except Exception:
         from client import cfscraper, USER_AGENT
     except Exception:
         cfscraper = None
-        USER_AGENT = "pluto-addon/1.0"
+        USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 
 logger = logging.getLogger("pluto")
 
@@ -38,18 +30,9 @@ def iso_to_dt(s: Optional[str]) -> Optional[datetime]:
             dt = dt.replace(tzinfo=timezone.utc)
         return dt
     except Exception:
-        fmts = [
-            "%Y-%m-%dT%H:%M:%S.%f%z",
-            "%Y-%m-%dT%H:%M:%S%z",
-            "%Y-%m-%dT%H:%M:%S.%f",
-            "%Y-%m-%dT%H:%M:%S",
-        ]
-        for f in fmts:
+        for f in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
             try:
-                dt = datetime.strptime(s, f)
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                return dt
+                return datetime.strptime(s, f).replace(tzinfo=timezone.utc)
             except Exception:
                 continue
     return None
@@ -59,158 +42,114 @@ def get_current_time() -> datetime:
     try:
         r = requests.get("http://worldtimeapi.org/api/timezone/America/Sao_Paulo", timeout=6)
         r.raise_for_status()
-        data = r.json()
-        dt_str = data.get("datetime") or data.get("utc_datetime")
-        dt = iso_to_dt(dt_str)
-        if dt is None:
-            raise ValueError("invalid time")
-        return dt.astimezone(timezone.utc)
+        dt = iso_to_dt(r.json().get("datetime"))
+        return dt.astimezone(timezone.utc) if dt else datetime.now(timezone.utc)
     except Exception:
         return datetime.now(timezone.utc)
 
 
-def fetch_json(url: str, timeout: int = 15) -> Any:
+def fetch_json(url: str) -> Any:
     headers = {"User-Agent": USER_AGENT}
     if cfscraper:
-        resp = cfscraper.get(url, headers=headers, timeout=timeout)
+        resp = cfscraper.get(url, headers=headers, timeout=15)
     else:
-        resp = requests.get(url, headers=headers, timeout=timeout)
+        resp = requests.get(url, headers=headers, timeout=15)
     resp.raise_for_status()
     return resp.json()
 
 
-def format_utc_z(dt: Optional[datetime]) -> Optional[str]:
-    if not dt:
-        return None
-    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
 def playlist_pluto(use_local_file: Optional[str] = None) -> List[Dict[str, Any]]:
     now_utc = get_current_time()
-    from_dt = now_utc
-    to_dt = from_dt + timedelta(days=1)
-    from_str = format_utc_z(from_dt)
-    to_str = format_utc_z(to_dt)
+    start = now_utc.strftime("%Y-%m-%dT%H:%M:%SZ")
+    stop = (now_utc + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    device_id = str(uuid.uuid4())
 
     if use_local_file:
-        with open(use_local_file, "r", encoding="utf-8") as fh:
-            channels = json.load(fh)
+        with open(use_local_file, "r", encoding="utf-8") as f:
+            channels = json.load(f)
     else:
-        url = f"https://api.pluto.tv/v2/channels?start={quote_plus(from_str)}&stop={quote_plus(to_str)}"
+        url = f"https://api.pluto.tv/v2/channels?start={quote_plus(start)}&stop={quote_plus(stop)}"
         channels = fetch_json(url)
 
-    out: List[Dict[str, Any]] = []
-    if not isinstance(channels, list):
-        return out
+    result: List[Dict[str, Any]] = []
 
     for ch in channels:
         chan_id = ch.get("id") or ch.get("_id") or ch.get("channelId")
-        title = ch.get("name") or ch.get("title") or ""
-        desc = ch.get("short_description") or ch.get("description") or ""
-        thumb = None
-        try:
-            thumb = ch.get("images", {}).get("logo", {}).get("url") or ch.get("image_url")
-        except Exception:
-            thumb = ch.get("image_url")
+        title = ch.get("name") or ""
+        thumb = (ch.get("images", {}).get("logo", {}).get("url") or
+                 ch.get("logo", {}).get("path") or
+                 ch.get("image_url") or "")
 
         stream_url = None
-        streams = ch.get("streams") or []
-        if isinstance(streams, list):
-            for s in streams:
-                url_s = s.get("url") or s.get("hls_url")
-                if url_s:
-                    stream_url = url_s
-                    break
-        if not stream_url:
-            stream_url = ch.get("stream") or ch.get("stream_url")
+        stitched = ch.get("stitched", {}).get("urls", [])
+        if stitched:
+            url = stitched[0].get("url", "")
+            if url:
+                stream_url = (
+                    url.replace("&deviceMake=", "&deviceMake=Firefox")
+                       .replace("&deviceType=", "&deviceType=web")
+                       .replace("&deviceId=unknown", f"&deviceId={device_id}")
+                       .replace("&deviceModel=", "&deviceModel=web")
+                       .replace("&deviceVersion=unknown", "&deviceVersion=82.0")
+                       .replace("&appName=&", "&appName=web&")
+                       .replace("&appVersion=&", "&appVersion=5.9.1-e0b37ef76504d23c6bdc8157813d13333dfa33a3")
+                       .replace("&sid=", f"&sid={device_id}&sessionID={device_id}")
+                       .replace("&deviceDNT=0", "&deviceDNT=false")
+                    + f"&serverSideAds=false&terminate=false&clientDeviceType=0&clientModelNumber=na&clientID={device_id}"
+                    + "|User-Agent=" + quote_plus(USER_AGENT)
+                )
 
-        timelines = ch.get("timelines") or ch.get("timeline") or []
-        programs: List[Dict[str, Any]] = []
-        for t in timelines:
+        programs = []
+        for t in ch.get("timelines", []):
             start_dt = iso_to_dt(t.get("start"))
             stop_dt = iso_to_dt(t.get("stop"))
-            ep = t.get("episode") or {}
-            title_p = ep.get("name") or t.get("title") or ""
-            desc_p = ep.get("description") or t.get("description") or ""
-            programs.append(
+            ep = t.get("episode", {}) or {}
+            programs.append({
+                "title": ep.get("name") or t.get("title") or "",
+                "description": ep.get("description") or "",
+                "start": start_dt,
+                "stop": stop_dt,
+            })
+
+        programs = sorted([p for p in programs if p["start"]], key=lambda x: x["start"])
+
+        current = next((p for p in programs if p["start"] <= now_utc <= p["stop"]), None)
+        next_prog = None
+        if current:
+            idx = programs.index(current)
+            next_prog = programs[idx + 1] if idx + 1 < len(programs) else None
+
+        result.append({
+            "id": chan_id,
+            "title": title,
+            "thumbnail": thumb,
+            "stream_url": stream_url,
+            "programs": [
                 {
-                    "title": title_p,
-                    "description": desc_p,
-                    "start": format_utc_z(start_dt),
-                    "stop": format_utc_z(stop_dt),
-                    "start_dt": start_dt,
-                    "stop_dt": stop_dt,
+                    "title": p["title"],
+                    "description": p["description"],
+                    "start": p["start"].strftime("%Y-%m-%dT%H:%M:%SZ") if p["start"] else None,
+                    "stop": p["stop"].strftime("%Y-%m-%dT%H:%M:%SZ") if p["stop"] else None,
                 }
-            )
+                for p in programs
+            ],
+            "current_program": current and {
+                "title": current["title"],
+                "description": current["description"],
+                "start": current["start"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "stop": current["stop"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            },
+            "next_program": next_prog and {
+                "title": next_prog["title"],
+                "description": next_prog["description"],
+                "start": next_prog["start"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "stop": next_prog["stop"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+            },
+        })
 
-        programs = sorted(
-            [p for p in programs if p.get("start_dt")], key=lambda x: x["start_dt"]
-        )
-
-        current_program = None
-        next_program = None
-        for idx, p in enumerate(programs):
-            sd, ed = p.get("start_dt"), p.get("stop_dt")
-            if sd and ed and sd <= now_utc <= ed:
-                current_program = p
-                if idx + 1 < len(programs):
-                    next_program = programs[idx + 1]
-                break
-
-        if not current_program:
-            for p in programs:
-                sd = p.get("start_dt")
-                if sd and sd > now_utc:
-                    next_program = p
-                    break
-
-        ordered = []
-        if current_program:
-            ordered.append(current_program)
-            if next_program:
-                ordered.append(next_program)
-        elif next_program:
-            ordered.append(next_program)
-        for p in programs:
-            if p not in ordered:
-                ordered.append(p)
-        for p in ordered:
-            p.pop("start_dt", None)
-            p.pop("stop_dt", None)
-
-        out.append(
-            {
-                "id": chan_id,
-                "title": title,
-                "description": desc,
-                "thumbnail": thumb,
-                "stream_url": stream_url,
-                "programs": ordered,
-                "current_program": current_program
-                and {
-                    "title": current_program.get("title"),
-                    "description": current_program.get("description"),
-                    "start": current_program.get("start"),
-                    "stop": current_program.get("stop"),
-                },
-                "next_program": next_program
-                and {
-                    "title": next_program.get("title"),
-                    "description": next_program.get("description"),
-                    "start": next_program.get("start"),
-                    "stop": next_program.get("stop"),
-                },
-                "raw": ch,
-            }
-        )
-
-    return out
+    return result
 
 
 if __name__ == "__main__":
     data = playlist_pluto()
-    print(f"Loaded {len(data)} channels")
-    if data:
-        import pprint
-
-        pprint.pprint(data[0])
+    print(f"{len(data)} canais carregados")
