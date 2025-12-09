@@ -1,0 +1,14 @@
+<settings>
+<category label="Parental">
+	<setting label="Primeiro Acesso" id="first" type="bool" visible="false" default="true"/>
+	<setting label="Mostrar Adultos" id="hidexxx" type="bool" visible="false" default="false"/>
+	<setting label="Senha Parental para Adultos" option="hidden" visible="false" id="parental_password" type="text" default=""/>
+</category>
+<category label="VIP">
+	<setting label="[COLOR lightblue]Configurações de Acesso[/COLOR] [COLOR gold](Vip):[/COLOR]" type="lsep"/>
+	<setting label="Usuário" id="username" type="text" default=""/>
+	<setting label="Senha" id="password" type="text" default="" enable="!eq(-1,false)"/>
+	<setting label="Portal" id="portal" type="enum" values="Portal 1|Portal 2|Portal 3" default="0" />
+	<setting label="Exibir VIP Oneplay" id="exibirvip" type="bool" default="true" />
+</category>
+</settings>
