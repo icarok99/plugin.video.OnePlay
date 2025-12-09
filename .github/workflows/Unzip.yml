@@ -1,0 +1,52 @@
+# .github/workflows/unzip.yml
+name: Extrair ZIP
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'plugin.video.OnePlay.zip'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unzip-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout do repositorio
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Instalar unzip
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Extrair ZIP na raiz
+        run: |
+          unzip -o plugin.video.OnePlay.zip
+          chmod -R u+rwX,go+rX .
+
+      - name: Configurar Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Verificar alteracoes
+        id: changes
+        run: |
+          git status --porcelain
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit e Push (se houver mudancas)
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          git add .
+          git commit -m "Atualizacao automatica do plugin a partir do ZIP"
+          git push
