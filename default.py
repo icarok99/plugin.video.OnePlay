@@ -743,18 +743,34 @@ def scraper_episodios(param):
     if not url:
         return
 
-    if re.search(r'/filmes?/|/generos/', url):
+    if '/filmes/' in url:
         addMenuItem(
             {
                 'name': param.get('name', ''),
                 'iconimage': param.get('iconimage', ''),
                 'url': url,
+                'prioridade': prioridade
             },
             destiny='/doramas_players',
             folder=False
         )
         end()
-        setview()
+        return
+
+    html = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}).text
+
+    if 'dooplay_player_option' in html:
+        addMenuItem(
+            {
+                'name': param.get('name', ''),
+                'iconimage': param.get('iconimage', ''),
+                'url': url,
+                'prioridade': prioridade
+            },
+            destiny='/doramas_players',
+            folder=False
+        )
+        end()
         return
 
     lista = VOD3(vod3_url).scraper_episodios(url)
