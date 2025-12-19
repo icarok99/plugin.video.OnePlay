@@ -450,38 +450,28 @@ class VOD1:
 class VOD2:
     def __init__(self, url):
         self.base = url.rstrip("/")
-        self.parent_candidates = [
-            "https://iframetester.com/",
-            "https://iframetester.com",
-            "https://iframetester.com/embed",
-        ]
-        self.base_headers = {
+        self.headers = {
             'User-Agent': USER_AGENT,
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Site': 'cross-site',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Dest': 'iframe',
+            'Accept': '*/*',
+            'Accept-Language': 'pt-BR,pt;q=0.9',
+            'Connection': 'keep-alive'
         }
 
+    def _strip_subtitle(self, url):
+        if '?s=' in url:
+            url = url.split('?s=', 1)[0]
+        return url.strip()
+
     def _resolve_video_url(self, session, video_url, referer):
-        video_url = video_url.strip()
-        if not video_url:
-            return ''
+        video_url = self._strip_subtitle(video_url)
 
         if re.search(r'\.(mp4|m3u8|ts|mpegurl)(\?|#|$)', video_url, re.I):
-            if any(d in video_url.lower() for d in ["streamcnvs.com", "cnvsplus.com", "watchingvs.com", "cdn"]):
-                extra = f"|User-Agent={quote_plus(USER_AGENT)}&Referer={quote_plus(self.base)}&Origin={quote_plus(self.base)}"
-                try:
-                    r = session.get(video_url, headers={'User-Agent': USER_AGENT}, timeout=10)
-                    cookies = r.cookies.get_dict()
-                    if cookies:
-                        extra += f"&Cookie={quote_plus(urlencode(cookies))}"
-                except:
-                    pass
-                return video_url + extra
+            return (
+                f"{video_url}"
+                f"|User-Agent={quote_plus(USER_AGENT)}"
+                f"&Referer={quote_plus(self.base)}"
+                f"&Origin={quote_plus(self.base)}"
+            )
 
         try:
             video_hash = video_url.strip("/").split("/")[-1]
@@ -489,9 +479,13 @@ class VOD2:
             origin = f"{parsed.scheme}://{parsed.netloc}"
             player = f"{origin}/player/index.php?data={video_hash}&do=getVideo"
 
-            r = session.get(video_url, headers={**self.base_headers, 'Referer': referer}, timeout=20)
+            r = session.get(
+                video_url,
+                headers={**self.headers, 'Referer': referer},
+                timeout=15
+            )
+
             cookies = r.cookies.get_dict()
-            cookie_str = urlencode(cookies) if cookies else ""
 
             r = session.post(
                 player,
@@ -499,22 +493,21 @@ class VOD2:
                     'Origin': origin,
                     'Referer': video_url,
                     'X-Requested-With': 'XMLHttpRequest',
-                    'User-Agent': USER_AGENT,
+                    'User-Agent': USER_AGENT
                 },
                 data={'hash': video_hash, 'r': referer},
                 cookies=cookies,
-                timeout=20
+                timeout=15
             )
 
-            if r.status_code == 200:
-                js = r.json()
-                source = js.get('videoSource')
-                if source:
-                    extra = f"|User-Agent={quote_plus(USER_AGENT)}"
-                    if cookie_str:
-                        extra += f"&Cookie={quote_plus(cookie_str)}"
-                    extra += f"&Referer={quote_plus(origin)}"
-                    return source + extra
+            js = r.json()
+            if js.get('videoSource'):
+                return (
+                    f"{js['videoSource']}"
+                    f"|User-Agent={quote_plus(USER_AGENT)}"
+                    f"&Cookie={quote_plus(urlencode(cookies))}"
+                    f"&Referer={quote_plus(origin)}"
+                )
         except:
             pass
 
@@ -522,36 +515,25 @@ class VOD2:
 
     def tvshows(self, imdb, season, episode):
         try:
-            if not (imdb and season and episode):
-                return ''
-
             session = cfscraper
-
             url = f'{self.base}/serie/{imdb}/{season}/{episode}'
-            r_ = urlparse(url)._replace(path='', query='', fragment='').geturl() + '/'
+            referer = urlparse(url)._replace(path='', query='', fragment='').geturl() + '/'
 
-            html = ''
-            for parent in self.parent_candidates:
-                try:
-                    r = session.get(url, headers={**self.base_headers, 'Referer': parent}, timeout=20)
-                    if 'var ALL_EPISODES' in r.text:
-                        html = r.text
-                        break
-                except:
-                    continue
+            r = session.get(
+                url,
+                headers={**self.headers, 'sec-fetch-dest': 'iframe'},
+                timeout=15
+            )
 
-            if not html:
-                return ''
-
-            m = re.search(r'var ALL_EPISODES\s*=\s*({.*?});', html, re.DOTALL)
+            m = re.search(r'var ALL_EPISODES\s*=\s*({.*?});', r.text, re.DOTALL)
             if not m:
                 return ''
 
-            all_episodes = json.loads(m.group(1))
+            episodes = json.loads(m.group(1))
             contentid = next(
                 (
                     ep['ID']
-                    for ep in all_episodes.get(str(season), [])
+                    for ep in episodes.get(str(season), [])
                     if str(ep.get('epi_num')) == str(episode)
                 ),
                 None
@@ -563,92 +545,96 @@ class VOD2:
             api = f'{self.base}/api'
             r = session.post(
                 api,
-                headers={**self.base_headers, 'Referer': url},
+                headers={**self.headers, 'Referer': url},
                 data={'action': 'getOptions', 'contentid': contentid},
-                timeout=20
+                timeout=15
             )
 
             options = r.json().get('data', {}).get('options', [])
             if not options:
                 return ''
 
-            # REGRA FIXA:
-            # options[0] = premium
-            # options[1] = fast
-            if len(options) > 1:
-                video_id = options[1]['ID']  # FAST
+            ids = [o.get('ID') for o in options if o.get('ID')]
+
+            if len(ids) >= 2:
+                order = [ids[1], ids[0]]
+                if len(ids) >= 3:
+                    order.append(ids[2])
             else:
-                video_id = options[0]['ID']
+                order = [ids[0]]
 
-            r = session.post(
-                api,
-                headers={**self.base_headers, 'Referer': url},
-                data={'action': 'getPlayer', 'video_id': video_id},
-                timeout=20
-            )
+            for video_id in order:
+                r = session.post(
+                    api,
+                    headers={**self.headers, 'Referer': url},
+                    data={'action': 'getPlayer', 'video_id': video_id},
+                    timeout=15
+                )
 
-            video_url = r.json().get('data', {}).get('video_url', '').strip()
-            if not video_url:
-                return ''
+                video_url = r.json().get('data', {}).get('video_url', '').strip()
+                if not video_url:
+                    continue
 
-            return self._resolve_video_url(session, video_url, r_)
+                resolved = self._resolve_video_url(session, video_url, referer)
+                if resolved:
+                    return resolved
+
+            return ''
 
         except:
             return ''
 
     def movie(self, imdb):
-        stream = ''
         try:
-            if not imdb:
-                return ''
-
             session = cfscraper
             url = f'{self.base}/filme/{imdb}'
 
-            r = session.get(url, headers={'User-Agent': USER_AGENT, 'sec-fetch-dest': 'iframe'}, timeout=20)
-            soup = BeautifulSoup(r.text, 'html.parser')
+            r = session.get(
+                url,
+                headers={**self.headers, 'sec-fetch-dest': 'iframe'},
+                timeout=15
+            )
 
-            btns = soup.find_all("div", class_="btn-server")
+            soup = BeautifulSoup(r.text, 'html.parser')
+            btns = soup.find_all('div', class_='btn-server')
             if not btns:
                 return ''
 
+            api = f'{self.base}/api'
+            referer = urlparse(url)._replace(path='', query='', fragment='').geturl() + '/'
+
             ids = [b.get('data-id') for b in btns if b.get('data-id')]
+
             if not ids:
                 return ''
 
-            fast_btn = None
-            for b in btns:
-                if any(x in b.get_text(strip=True).lower() for x in ['fast', 'fast 2', 'fast 3']):
-                    fast_btn = b
-                    break
+            if len(ids) >= 2:
+                order = [ids[1], ids[0]]
+                if len(ids) >= 3:
+                    order.append(ids[2])
+            else:
+                order = [ids[0]]
 
-            video_id = fast_btn.get('data-id') if fast_btn else ids[0]
-
-            api = f'{self.base}/api'
-            r = session.post(
-                api,
-                headers={'User-Agent': USER_AGENT, 'Referer': url},
-                data={'action': 'getPlayer', 'video_id': video_id},
-                timeout=20
-            )
-
-            video_url = r.json().get('data', {}).get('video_url', '').strip()
-            if not video_url:
-                return ''
-
-            if re.search(r'\.(mp4|m3u8|ts|mpegurl)(\?|#|$)', video_url, re.I):
-                return (
-                    f"{video_url}"
-                    f"|User-Agent={quote_plus(USER_AGENT)}"
-                    f"&Referer={quote_plus(self.base)}"
-                    f"&Origin={quote_plus(self.base)}"
+            for video_id in order:
+                r = session.post(
+                    api,
+                    headers={**self.headers, 'Referer': url},
+                    data={'action': 'getPlayer', 'video_id': video_id},
+                    timeout=15
                 )
 
-            r_ = urlparse(url)._replace(path='', query='', fragment='').geturl() + '/'
-            return self._resolve_video_url(session, video_url, r_)
+                video_url = r.json().get('data', {}).get('video_url', '').strip()
+                if not video_url:
+                    continue
+
+                resolved = self._resolve_video_url(session, video_url, referer)
+                if resolved:
+                    return resolved
+
+            return ''
 
         except:
-            return stream
+            return ''
 
 class VOD3:
     def __init__(self, url):
