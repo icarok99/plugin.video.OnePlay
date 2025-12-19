@@ -1047,33 +1047,55 @@ def episodes_iptv(param):
 
 @route('/play_resolve_movies')
 def play_resolve_movies(param):
-    notify('Aguarde...')
+    notify('Aguarde')
+
     name = param.get('name', '')
     iconimage = param.get('iconimage', '')
     description = param.get('description', '')
-    imdb = param.get('imdbnumber', '')
+    imdb_id = param.get('imdbnumber', '')
 
-    url = VOD2(vod2_url).movie(imdb)
+    url = VOD2(vod2_url).movie(imdb_id)
 
     if url:
         notify('Escolha o audio portugues nos ajustes')
 
-        li = xbmcgui.ListItem(path=url)
-        li.setArt({'thumb': iconimage, 'icon': iconimage})
-        li.setInfo('video', {
-            'title': name,
-            'plot': description,
-            'imdbnumber': imdb,
-            'mediatype': 'movie'
-        })
+        stream_url = url.split('|')[0] if '|' in url else url
+        is_mp4 = stream_url.lower().endswith('.mp4')
 
-        xbmc.Player().play(item=url, listitem=li)
+        li = xbmcgui.ListItem(path=stream_url)
+        li.setArt({'thumb': iconimage, 'icon': iconimage})
+        li.setContentLookup(False)
+
+        if is_mp4:
+            li.setProperty('inputstream', 'inputstream.ffmpegdirect')
+            li.setProperty('inputstream.ffmpegdirect.manifest_type', 'mp4')
+            li.setMimeType('video/mp4')
+        else:
+            li.setProperty('inputstream', 'inputstream.adaptive')
+            li.setProperty('inputstream.adaptive.manifest_type', 'hls')
+            li.setMimeType('application/vnd.apple.mpegurl')
+            li.setProperty('inputstream.adaptive.original_audio_language', 'pt')
+
+        if '|' in url:
+            headers = url.split('|', 1)[1]
+            li.setProperty('inputstream.adaptive.stream_headers', headers)
+            li.setProperty('inputstream.ffmpegdirect.stream_headers', headers)
+
+        info = li.getVideoInfoTag()
+        info.setTitle(name)
+        info.setPlot(description)
+        info.setIMDBNumber(imdb_id)
+        info.setMediaType('movie')
+
+        xbmc.Player().play(item=stream_url, listitem=li)
+
     else:
-        notify('Stream Indisponível')
+        notify('Stream Indisponivel')
 
 @route('/play_resolve_series')
 def play_resolve_series(param):
-    notify('Aguarde...')
+    notify('Aguarde')
+
     serie_name = param.get('serie_name', '')
     season = param.get('season_num', '')
     episode = param.get('episode_num', '')
@@ -1082,19 +1104,42 @@ def play_resolve_series(param):
     ep_title = param.get('ep_title', param.get('name', ''))
 
     url = VOD2(vod2_url).tvshows(imdb_id, season, episode)
+
     if url:
         notify('Escolha o audio portugues nos ajustes')
-        li = xbmcgui.ListItem(ep_title, path=url)
+
+        stream_url = url.split('|')[0] if '|' in url else url
+        is_mp4 = stream_url.lower().endswith('.mp4')
+
+        li = xbmcgui.ListItem(path=stream_url)
         li.setArt({'thumb': iconimage, 'icon': iconimage})
-        li.setInfo('video', {
-            'title': ep_title,
-            'tvshowtitle': serie_name,
-            'mediatype': 'episode'
-        })
+        li.setContentLookup(False)
+
+        if is_mp4:
+            li.setProperty('inputstream', 'inputstream.ffmpegdirect')
+            li.setProperty('inputstream.ffmpegdirect.manifest_type', 'mp4')
+            li.setMimeType('video/mp4')
+        else:
+            li.setProperty('inputstream', 'inputstream.adaptive')
+            li.setProperty('inputstream.adaptive.manifest_type', 'hls')
+            li.setMimeType('application/vnd.apple.mpegurl')
+            li.setProperty('inputstream.adaptive.original_audio_language', 'pt')
+
+        if '|' in url:
+            headers = url.split('|', 1)[1]
+            li.setProperty('inputstream.adaptive.stream_headers', headers)
+            li.setProperty('inputstream.ffmpegdirect.stream_headers', headers)
+
+        info = li.getVideoInfoTag()
+        info.setTitle(ep_title)
+        info.setTvShowTitle(serie_name)
+        info.setIMDBNumber(imdb_id)
+        info.setMediaType('episode')
+
         xbmcplugin.setResolvedUrl(int(sys.argv[1]), True, li)
+
     else:
-        notify('Stream Indisponível')
-        xbmcplugin.setResolvedUrl(int(sys.argv[1]), False, xbmcgui.ListItem())
+        notify('Stream Indisponivel')
 
 @route('/play_direct')
 def play_direct(param):
