@@ -15,6 +15,15 @@ profile = xbmcvfs.translatePath('special://profile/addon_data/plugin.video.OnePl
 UPDATE_CHECK_FILE = os.path.join(profile, 'last_checked_date.txt')
 REMOTE_DATE_URL = 'https://raw.githubusercontent.com/icarok99/plugin.video.OnePlay/main/last_update.txt'
 
+def stop_player():
+    try:
+        player = xbmc.Player()
+        if player.isPlaying():
+            player.stop()
+            xbmc.sleep(300)
+    except:
+        pass
+
 def get_local_date():
     try:
         with open(UPDATE_CHECK_FILE, 'r') as f:
@@ -1048,6 +1057,7 @@ def episodes_iptv(param):
 @route('/play_resolve_movies')
 def play_resolve_movies(param):
     notify('Aguarde')
+    stop_player()
 
     name = param.get('name', '')
     iconimage = param.get('iconimage', '')
@@ -1095,6 +1105,7 @@ def play_resolve_movies(param):
 @route('/play_resolve_series')
 def play_resolve_series(param):
     notify('Aguarde')
+    stop_player()
 
     serie_name = param.get('serie_name', '')
     season = param.get('season_num', '')
